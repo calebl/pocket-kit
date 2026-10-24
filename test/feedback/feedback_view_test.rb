@@ -26,6 +26,19 @@ class FeedbackViewTest < ActionDispatch::IntegrationTest
     assert_select "#pocket_kit_feedback", count: 0
   end
 
+  test "a malformed command hides the button and makes the endpoint unavailable" do
+    ENV[FakeCommand::ENV_NAME] = '"'
+
+    get root_path
+    assert_response :success
+    assert_select "#pocket_kit_feedback", count: 0
+
+    post pocket_kit.feedback_path, params: { text: "Hello", screen: "pages#home",
+                                             request_id: "0b6f1c1e-6a51-4d6a-9d3e-3f3a0c2e9b11" },
+                                   as: :turbo_stream
+    assert_response :not_found
+  end
+
   test "extra hidden fields are rendered only when configured and given" do
     get note_path(7)
     assert_select "#pocket_kit_feedback input[name=note_id][value=?]", "7"

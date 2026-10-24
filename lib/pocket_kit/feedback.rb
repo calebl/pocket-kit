@@ -34,6 +34,8 @@ module PocketKit
     def self.command
       value = ENV.fetch(PocketKit.feedback.command_env, "")
       value.strip.empty? ? nil : Shellwords.split(value)
+    rescue ArgumentError
+      nil
     end
 
     # Whether the button shows and the endpoint answers for this request.
