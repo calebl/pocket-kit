@@ -1,0 +1,86 @@
+/* The feedback button and its dialog. Set any of these custom properties in
+   the app's own stylesheet (on :root or on .pk-feedback) to match its colors. */
+.pk-feedback {
+  --pk-feedback-color: CanvasText;
+  --pk-feedback-background: Canvas;
+  --pk-feedback-muted: GrayText;
+  --pk-feedback-border: color-mix(in srgb, currentColor 30%, transparent);
+  --pk-feedback-radius: 6px;
+  --pk-feedback-backdrop: rgba(0, 0, 0, 0.4);
+  --pk-feedback-failed: #c0392b;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pk-feedback-toggle {
+  background: none;
+  border: 1px solid var(--pk-feedback-border);
+  border-radius: var(--pk-feedback-radius);
+  color: var(--pk-feedback-muted);
+  padding: 0.25rem 0.45rem;
+  line-height: 0;
+  cursor: pointer;
+}
+
+.pk-feedback-toggle:hover {
+  color: var(--pk-feedback-color);
+}
+
+.pk-feedback-sent {
+  color: var(--pk-feedback-muted);
+  font-size: 12px;
+}
+
+.pk-feedback-dialog {
+  width: calc(100% - 2rem);
+  max-width: 28rem;
+  box-sizing: border-box;
+  padding: 1rem;
+  text-align: left;
+  color: var(--pk-feedback-color);
+  background: var(--pk-feedback-background);
+  border: 1px solid var(--pk-feedback-border);
+  border-radius: var(--pk-feedback-radius);
+}
+
+.pk-feedback-dialog::backdrop {
+  background: var(--pk-feedback-backdrop);
+}
+
+.pk-feedback-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* 16px keeps iOS Safari from zooming in when the field is focused. */
+.pk-feedback-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem;
+  font: inherit;
+  font-size: 16px;
+  resize: vertical;
+  border: 1px solid var(--pk-feedback-border);
+  border-radius: var(--pk-feedback-radius);
+}
+
+.pk-feedback-status {
+  margin: 0;
+}
+
+.pk-feedback-status:empty {
+  display: none;
+}
+
+.pk-feedback-failed {
+  color: var(--pk-feedback-failed);
+}
+
+.pk-feedback-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}

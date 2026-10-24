@@ -1,0 +1,25 @@
+# A systemd user unit that keeps the app running and starts it at login.
+#
+# Install:
+#   cp templates/app.service ~/.config/systemd/user/myapp.service
+#   (edit WorkingDirectory and ExecStart)
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now myapp
+#   loginctl enable-linger "$USER"   # keep it running while logged out
+#
+# Logs: journalctl --user -u myapp -f
+
+[Unit]
+Description=myapp (local web app)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/src/myapp
+ExecStart=%h/src/myapp/bin/start
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
