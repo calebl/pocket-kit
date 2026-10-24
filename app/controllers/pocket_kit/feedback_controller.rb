@@ -1,5 +1,3 @@
-require "open3"
-
 module PocketKit
   # Hands a note typed into the feedback dialog to the command configured by
   # PocketKit.feedback.command_env.
@@ -18,6 +16,8 @@ module PocketKit
   class FeedbackController < PocketKit.feedback.parent_controller.constantize
     MAX_LENGTH = 2000
     NOTES_PER_MINUTE = 5
+    COMMAND_TIMEOUT = 10
+    TERMINATION_GRACE = 1
     UUID_FORMAT = /\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/
 
     # One store for the process, so the limit holds even where the app's cache
@@ -51,12 +51,54 @@ module PocketKit
     def sent?(text, screen, request_id)
       body = Feedback.message(text: text, screen: screen, context: Array(PocketKit.feedback.context_lines.call(self)),
                               device: Feedback.device(params[:device]))
-      _output, status = Open3.capture2e(*Feedback.command, "--request-id",
-                                        "#{PocketKit.feedback.request_id_prefix}-#{request_id}", "--json", "-",
-                                        stdin_data: body)
-      PocketKit.feedback.sent_exit_codes.include?(status.exitstatus)
+      command = [ *Feedback.command, "--request-id", "#{PocketKit.feedback.request_id_prefix}-#{request_id}",
+                  "--json", "-" ]
+      status = run_command(command, body)
+      status && PocketKit.feedback.sent_exit_codes.include?(status.exitstatus)
     rescue SystemCallError
       false
+    end
+
+    def run_command(command, body)
+      input, writer = IO.pipe
+      pid = Process.spawn(*command, in: input, out: File::NULL, err: File::NULL)
+      input.close
+      writer_thread = Thread.new do
+        writer.write(body)
+      rescue IOError, SystemCallError
+        nil
+      ensure
+        writer.close
+      end
+
+      status = wait_for(pid, COMMAND_TIMEOUT)
+      terminate(pid) unless status
+      status
+    ensure
+      input&.close unless input&.closed?
+      writer&.close unless writer&.closed?
+      writer_thread&.join
+    end
+
+    def wait_for(pid, timeout)
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+      loop do
+        result = Process.wait2(pid, Process::WNOHANG)
+        return result.last if result
+        return if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+        sleep 0.01
+      end
+    end
+
+    def terminate(pid)
+      Process.kill("TERM", pid)
+      return if wait_for(pid, TERMINATION_GRACE)
+
+      Process.kill("KILL", pid)
+      Process.wait(pid)
+    rescue Errno::ECHILD, Errno::ESRCH
+      nil
     end
 
     # The configured hidden fields as posted, so a fresh form carries them again.

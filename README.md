@@ -30,8 +30,14 @@ gem "pocket_kit", github: "calebl/pocket-kit", tag: "v0.1.0"
 mount PocketKit::Engine, at: "/pocket-kit"
 ```
 
-pocket-kit needs Rails 8 and turbo-rails. The JavaScript is a Stimulus
-controller served through importmap-rails and Propshaft.
+pocket-kit needs Rails 8, turbo-rails, importmap-rails, and stimulus-rails.
+The JavaScript is a Stimulus controller served through importmap-rails and
+Propshaft. If the host app has not initialized Importmap and Stimulus, run:
+
+```sh
+bin/rails importmap:install
+bin/rails stimulus:install
+```
 
 ## Feedback button
 

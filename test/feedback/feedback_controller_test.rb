@@ -114,6 +114,33 @@ class FeedbackControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_content
   end
 
+  test "a command that exceeds the timeout is killed and reported as a failure" do
+    script = File.join(@command_dir, "hanging-command")
+    pid_file = File.join(@command_dir, "pid")
+    File.write(script, <<~RUBY)
+      #!/usr/bin/env ruby
+      File.write(#{pid_file.dump}, Process.pid.to_s)
+      trap("TERM") {}
+      sleep
+    RUBY
+    File.chmod(0o755, script)
+    ENV[FakeCommand::ENV_NAME] = script
+    controller = PocketKit::FeedbackController
+    original_timeout = controller::COMMAND_TIMEOUT
+    controller.send(:remove_const, :COMMAND_TIMEOUT)
+    controller.const_set(:COMMAND_TIMEOUT, 0.2)
+
+    send_note
+
+    assert_response :unprocessable_content
+    assert_raises(Errno::ESRCH) { Process.kill(0, File.read(pid_file).to_i) }
+  ensure
+    if original_timeout
+      controller.send(:remove_const, :COMMAND_TIMEOUT)
+      controller.const_set(:COMMAND_TIMEOUT, original_timeout)
+    end
+  end
+
   test "is not found when no command is configured" do
     ENV.delete(FakeCommand::ENV_NAME)
     send_note
