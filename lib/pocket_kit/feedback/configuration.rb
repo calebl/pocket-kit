@@ -2,7 +2,7 @@ module PocketKit
   module Feedback
     class Configuration
       # The environment variable holding the command, split like a shell would
-      # but never run through one. Unset or blank turns the feedback piece off.
+      # but never run through one. Unset, blank, or malformed turns the piece off.
       attr_accessor :command_env
 
       # The first line of every message: "<heading> (screen: controller#action)".

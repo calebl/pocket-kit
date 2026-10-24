@@ -46,8 +46,8 @@ bin/rails stimulus:install
 ```ruby
 # config/initializers/pocket_kit.rb
 PocketKit.configure do |config|
-  # The environment variable holding the command. Unset or blank hides the
-  # button and turns the endpoint into a 404.
+  # The environment variable holding the command. Unset, blank, or malformed
+  # values hide the button and turn the endpoint into a 404.
   config.feedback.command_env = "FEEDBACK_COMMAND"
 
   # First line of every note: "My app feedback (screen: notes#show)".
@@ -78,7 +78,9 @@ end
 
 The variable is split into arguments like a shell would, but no shell runs it.
 pocket-kit appends `--request-id <prefix>-<uuid> --json -` and writes the note
-to the command's stdin:
+to the command's stdin. The command has 10 seconds to finish. Its output is
+discarded; on timeout, pocket-kit terminates its process group and reports the
+note as not sent.
 
 ```
 My app feedback (screen: notes#show)

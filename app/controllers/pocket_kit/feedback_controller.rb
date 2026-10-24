@@ -10,9 +10,9 @@ module PocketKit
   # against the app's routes), the app's context_lines, and a "Device:" block of
   # what the browser reports about itself (each field checked and capped).
   #
-  # A note counts as sent only when the command exits with one of
-  # sent_exit_codes. Anything else, including a missing command, is a failure
-  # and leaves the dialog open with the text still in it.
+  # A note counts as sent only when the command exits within 10 seconds with
+  # one of sent_exit_codes. A configured command that fails or times out leaves
+  # the dialog open with the text still in it.
   class FeedbackController < PocketKit.feedback.parent_controller.constantize
     MAX_LENGTH = 2000
     NOTES_PER_MINUTE = 5
