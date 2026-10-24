@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Dummy</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <%= stylesheet_link_tag "pocket_kit/feedback" %>
+    <%= javascript_importmap_tags %>
+  </head>
+  <body>
+    <header><%= content_for?(:feedback) ? yield(:feedback) : pocket_kit_feedback %></header>
+    <%= yield %>
+  </body>
+</html>

@@ -1,0 +1,10 @@
+en:
+  pocket_kit:
+    feedback:
+      open: "Send feedback"
+      label: "Feedback"
+      placeholder: "What would make this better?"
+      cancel: "Cancel"
+      send: "Send"
+      sent: "Sent"
+      failed: "Couldn't send. Your note is still here."

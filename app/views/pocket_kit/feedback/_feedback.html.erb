@@ -1,0 +1,35 @@
+<%# The feedback button and its dialog. An app can replace this partial by adding
+    its own app/views/pocket_kit/feedback/_feedback.html.erb; keep the ids, the
+    data attributes and the field names. %>
+<% if PocketKit::Feedback.enabled?(controller) %>
+  <div id="<%= PocketKit::Feedback::DOM_ID %>" class="pk-feedback" data-controller="pocket-kit--feedback">
+    <% if local_assigns[:status] == :sent %><span class="pk-feedback-sent" role="status"><%= t("pocket_kit.feedback.sent") %></span><% end %>
+    <button type="button" class="pk-feedback-toggle" title="<%= t("pocket_kit.feedback.open") %>"
+            aria-label="<%= t("pocket_kit.feedback.open") %>" data-action="pocket-kit--feedback#open"><svg width="14"
+      height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor"
+      stroke-width="1.4"><path d="M2 3h12v8H7l-3 3v-3H2z"/></svg></button>
+    <dialog class="pk-feedback-dialog" data-pocket-kit--feedback-target="dialog" aria-label="<%= t("pocket_kit.feedback.open") %>">
+      <%= form_with url: pocket_kit.feedback_path, class: "pk-feedback-form",
+                    data: { action: "pocket-kit--feedback#describe" } do |form| %>
+        <% PocketKit::Feedback::DEVICE_FIELDS.each_key do |field| %>
+          <%= hidden_field_tag "device[#{field}]", "", id: nil,
+                               data: { "pocket-kit--feedback-target": "device", field: field } %>
+        <% end %>
+        <%= hidden_field_tag :screen, screen, id: nil %>
+        <% PocketKit.feedback.hidden_fields.each do |name| %>
+          <% value = (local_assigns[:fields] || {}).with_indifferent_access[name] %>
+          <%= hidden_field_tag name, value, id: nil if value.present? %>
+        <% end %>
+        <%= hidden_field_tag :request_id, SecureRandom.uuid, id: nil %>
+        <%= text_area_tag :text, nil, rows: 5, maxlength: PocketKit::FeedbackController::MAX_LENGTH, required: true,
+                                      id: "pocket_kit_feedback_text", placeholder: t("pocket_kit.feedback.placeholder"),
+                                      "aria-label": t("pocket_kit.feedback.label") %>
+        <%= render "pocket_kit/feedback/status", status: nil %>
+        <div class="pk-feedback-buttons">
+          <button type="button" data-action="pocket-kit--feedback#close"><%= t("pocket_kit.feedback.cancel") %></button>
+          <%= form.submit t("pocket_kit.feedback.send"), name: nil %>
+        </div>
+      <% end %>
+    </dialog>
+  </div>
+<% end %>
