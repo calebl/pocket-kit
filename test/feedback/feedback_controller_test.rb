@@ -114,13 +114,26 @@ class FeedbackControllerTest < ActionDispatch::IntegrationTest
     assert_response :unprocessable_content
   end
 
-  test "a command that exceeds the timeout is killed and reported as a failure" do
+  test "a command that exceeds the timeout has its process group killed and is reported as a failure" do
     script = File.join(@command_dir, "hanging-command")
+    child_script = File.join(@command_dir, "hanging-child")
     pid_file = File.join(@command_dir, "pid")
+    child_pid_file = File.join(@command_dir, "child-pid")
+    child_stopped_file = File.join(@command_dir, "child-stopped")
+    File.write(child_script, <<~RUBY)
+      trap("TERM") do
+        File.write(#{child_stopped_file.dump}, "stopped")
+        exit!
+      end
+      File.write(#{child_pid_file.dump}, Process.pid.to_s)
+      sleep
+    RUBY
     File.write(script, <<~RUBY)
       #!/usr/bin/env ruby
-      File.write(#{pid_file.dump}, Process.pid.to_s)
       trap("TERM") {}
+      File.write(#{pid_file.dump}, Process.pid.to_s)
+      child = spawn(#{RbConfig.ruby.dump}, #{child_script.dump})
+      Process.wait(child)
       sleep
     RUBY
     File.chmod(0o755, script)
@@ -128,12 +141,14 @@ class FeedbackControllerTest < ActionDispatch::IntegrationTest
     controller = PocketKit::FeedbackController
     original_timeout = controller::COMMAND_TIMEOUT
     controller.send(:remove_const, :COMMAND_TIMEOUT)
-    controller.const_set(:COMMAND_TIMEOUT, 0.2)
+    controller.const_set(:COMMAND_TIMEOUT, 0.5)
 
     send_note
 
     assert_response :unprocessable_content
+    assert_equal "stopped", File.read(child_stopped_file)
     assert_raises(Errno::ESRCH) { Process.kill(0, File.read(pid_file).to_i) }
+    assert_raises(Errno::ESRCH) { Process.kill(0, File.read(child_pid_file).to_i) }
   ensure
     if original_timeout
       controller.send(:remove_const, :COMMAND_TIMEOUT)

@@ -61,7 +61,7 @@ module PocketKit
 
     def run_command(command, body)
       input, writer = IO.pipe
-      pid = Process.spawn(*command, in: input, out: File::NULL, err: File::NULL)
+      pid = Process.spawn(*command, in: input, out: File::NULL, err: File::NULL, pgroup: true)
       input.close
       writer_thread = Thread.new do
         writer.write(body)
@@ -92,12 +92,17 @@ module PocketKit
     end
 
     def terminate(pid)
-      Process.kill("TERM", pid)
-      return if wait_for(pid, TERMINATION_GRACE)
-
-      Process.kill("KILL", pid)
+      signal_group("TERM", pid)
+      sleep TERMINATION_GRACE
+      signal_group("KILL", pid)
       Process.wait(pid)
-    rescue Errno::ECHILD, Errno::ESRCH
+    rescue Errno::ECHILD
+      nil
+    end
+
+    def signal_group(signal, pid)
+      Process.kill(signal, -pid)
+    rescue Errno::ESRCH
       nil
     end
 
