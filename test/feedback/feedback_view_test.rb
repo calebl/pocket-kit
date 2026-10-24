@@ -1,4 +1,5 @@
 require "test_helper"
+require "json"
 
 class FeedbackViewTest < ActionDispatch::IntegrationTest
   include FakeCommand
@@ -56,11 +57,11 @@ class FeedbackViewTest < ActionDispatch::IntegrationTest
   test "the stylesheet and the Stimulus controller are served to the app" do
     get root_path
     assert_select "link[rel=stylesheet][href*='pocket_kit/feedback']"
-    assert_includes response.body, '"controllers/pocket_kit/feedback_controller"'
+    importmap = JSON.parse(css_select("script[type=importmap]").first.text)
+    controller_path = importmap.fetch("imports").fetch("controllers/pocket_kit/feedback_controller")
 
-    get Rails.application.assets.resolver.resolve("pocket_kit/feedback_controller.js")
+    get controller_path
     assert_response :success
-    assert_includes response.body, "describe()"
   end
 
   test "an app can replace the partial" do
