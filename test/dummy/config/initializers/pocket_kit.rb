@@ -8,4 +8,8 @@ PocketKit.configure do |config|
     note_id = controller.params[:note_id].to_s
     note_id.match?(/\A\d+\z/) ? [ "Note: #{note_id}" ] : []
   end
+
+  config.errors.command_env = "DUMMY_ERRORS_COMMAND"
+  config.errors.heading = "Dummy"
+  config.errors.request_id_prefix = "dummy-errors"
 end

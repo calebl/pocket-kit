@@ -112,6 +112,11 @@ sent from the screen they are about. See the README for setup. The note goes to
 a command you choose (a script that files an issue, appends to a file, sends a
 message) together with the screen and what the device reports about itself.
 
+pocket-kit's errors piece sends uncaught page errors and server exceptions to
+a command the same way, grouping repeats, so a broken screen is noticed without
+any outside service. Rails apps use the engine; other apps use the plain
+browser script and, for Python, `python/pocket_kit.py`.
+
 ## 7. A home-screen icon and a manifest
 
 Saved to the home screen, the app opens full screen like a native one. Add:

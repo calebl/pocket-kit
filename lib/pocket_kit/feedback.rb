@@ -1,5 +1,6 @@
-require "shellwords"
 require "pocket_kit/engine"
+require "pocket_kit/command"
+require "pocket_kit/report"
 require "pocket_kit/feedback/configuration"
 require "pocket_kit/feedback/helper"
 
@@ -32,10 +33,7 @@ module PocketKit
 
     # The configured command as an argument array, or nil when there is none.
     def self.command
-      value = ENV.fetch(PocketKit.feedback.command_env, "")
-      value.strip.empty? ? nil : Shellwords.split(value)
-    rescue ArgumentError
-      nil
+      Command.from_env(PocketKit.feedback.command_env)
     end
 
     # Whether the button shows and the endpoint answers for this request.

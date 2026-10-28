@@ -1,6 +1,7 @@
 require "rails"
 require "action_controller/railtie"
 require "action_view/railtie"
+require "active_job/railtie"
 require "propshaft"
 require "importmap-rails"
 require "turbo-rails"
@@ -16,7 +17,8 @@ module Dummy
     config.hosts.clear
     config.logger = Logger.new(nil)
     config.action_controller.allow_forgery_protection = false
-    config.action_dispatch.show_exceptions = :rescuable
+    config.action_dispatch.show_exceptions = :all
     config.active_support.deprecation = :raise
+    config.active_job.queue_adapter = :inline
   end
 end

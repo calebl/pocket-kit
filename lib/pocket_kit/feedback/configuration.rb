@@ -11,6 +11,10 @@ module PocketKit
       # Passed as `--request-id <prefix>-<uuid>`, so the receiver can drop repeats.
       attr_accessor :request_id_prefix
 
+      # What goes on the command's stdin: :text, the plain message, or :json,
+      # the shared JSON report (see "The report format" in the README).
+      attr_accessor :format
+
       # Exit statuses that count as sent. 3 means "saved but not yet announced".
       attr_accessor :sent_exit_codes
 
@@ -33,6 +37,7 @@ module PocketKit
         @command_env = "FEEDBACK_COMMAND"
         @heading = "Feedback"
         @request_id_prefix = "feedback"
+        @format = :text
         @sent_exit_codes = [ 0, 3 ]
         @enabled = ->(_controller) { true }
         @context_lines = ->(_controller) { [] }
