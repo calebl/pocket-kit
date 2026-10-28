@@ -211,6 +211,8 @@ class Reporter:
             if len(body) > MAX_BODY:
                 return 413
             body = body.decode("utf-8", "replace")
+        elif isinstance(body, str) and len(body.encode("utf-8")) > MAX_BODY:
+            return 413
         try:
             payload = json.loads(body)
         except ValueError:

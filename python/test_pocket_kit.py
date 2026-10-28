@@ -241,7 +241,11 @@ class ReporterTest(unittest.TestCase):
         self.assertEqual(400, self.kit.handle_browser_report(b"[1]"))
         self.assertEqual(422, self.kit.handle_browser_report(b'{"kind":"other"}'))
         self.assertEqual(422, self.kit.handle_browser_report(b'{"kind":"error","message":" "}'))
-        self.assertEqual(413, self.kit.handle_browser_report(b" " * (pocket_kit.MAX_BODY + 1)))
+        oversized = " " * (pocket_kit.MAX_BODY + 1)
+        self.assertEqual(413, self.kit.handle_browser_report(oversized.encode()))
+        self.assertEqual(413, self.kit.handle_browser_report(bytearray(oversized.encode())))
+        self.assertEqual(413, self.kit.handle_browser_report(oversized))
+        self.assertEqual(413, self.kit.handle_browser_report("é" * (pocket_kit.MAX_BODY // 2 + 1)))
 
     def test_page_posts_are_rate_limited(self):
         for i in range(pocket_kit.BROWSER_REPORTS_PER_MINUTE):
