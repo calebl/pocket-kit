@@ -77,7 +77,8 @@
     const topFrame = payload.stack.split("\n").map((line) => line.trim()).find((line) =>
       line.startsWith("at ") || line.includes("@") || /:\d+/.test(line)
     ) || ""
-    const key = `${payload.class}\n${payload.message}\n${topFrame}`
+    const normalizedMessage = payload.message.replace(/0x[0-9a-f]+/gi, "N").replace(/\d+/g, "N")
+    const key = `${payload.class}\n${normalizedMessage}\n${topFrame}`
     const state = errorState
     if (state.posted.has(key) || state.pending.has(key) || state.attempts >= MAX_ERRORS_PER_PAGE) {
       return Promise.resolve(false)

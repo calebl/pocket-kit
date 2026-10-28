@@ -109,6 +109,28 @@ class ErrorsSystemTest < ActionDispatch::SystemTestCase
                  evaluate_script("window.errorRequests.map((request) => request.stack.split('\\n').at(-1).trim())")
   end
 
+  test "client dedupe normalizes message numbers and addresses" do
+    visit root_path
+    execute_script(<<~JS)
+      window.errorRequests = []
+      window.fetch = (_url, options) => {
+        window.errorRequests.push(JSON.parse(options.body))
+        return new Promise(() => {})
+      }
+      for (let id = 1; id <= 10; id += 1) {
+        const error = new Error(`Note ${id} missing at 0x${(0xabc + id).toString(16)}`)
+        error.stack = "Error: note missing\\n    at save (/app.js:3:9)"
+        window.PocketKit.reportError(error)
+      }
+      const unrelated = new Error("Connection lost")
+      unrelated.stack = "Error: connection lost\\n    at save (/app.js:3:9)"
+      window.PocketKit.reportError(unrelated)
+    JS
+
+    assert_equal [ "Note 1 missing at 0xabd", "Connection lost" ],
+                 evaluate_script("window.errorRequests.map((request) => request.message)")
+  end
+
   test "an old page's pending report cannot contaminate the new page" do
     visit root_path
     execute_script(<<~JS)
