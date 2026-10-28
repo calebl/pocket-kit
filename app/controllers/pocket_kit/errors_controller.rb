@@ -21,9 +21,9 @@ module PocketKit
       message = clean(params[:message], MAX_MESSAGE)
       return head :unprocessable_content if message.blank? || params[:kind] != "error"
 
-      Errors.report(error_class: error_class, message: message, backtrace: backtrace, source: "browser",
-                    screen: screen, page: page)
-      head :accepted
+      accepted = Errors.report(error_class: error_class, message: message, backtrace: backtrace, source: "browser",
+                               screen: screen, page: page)
+      head accepted == false ? :service_unavailable : :accepted
     end
 
     private

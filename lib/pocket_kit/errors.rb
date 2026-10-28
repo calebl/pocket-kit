@@ -64,7 +64,8 @@ module PocketKit
       return false unless enabled?
 
       backtrace = backtrace.first(BACKTRACE_LINES)
-      group = groups.record(Groups.fingerprint(error_class, message, backtrace.first))
+      group_store = groups
+      group = group_store.record(Groups.fingerprint(error_class, message, backtrace.first))
       return unless group
 
       settings = PocketKit.errors
@@ -73,10 +74,17 @@ module PocketKit
                                          page: page, context: context))
       request_id = "#{settings.request_id_prefix}-#{SecureRandom.uuid}"
       command = self.command
-      outbox.push do
-        Command.send_report(command, request_id: request_id, body: body, timeout: COMMAND_TIMEOUT,
-                                     sent_exit_codes: settings.sent_exit_codes)
+      accepted = outbox.push do
+        delivered = false
+        begin
+          delivered = Command.send_report(command, request_id: request_id, body: body, timeout: COMMAND_TIMEOUT,
+                                                    sent_exit_codes: settings.sent_exit_codes)
+        ensure
+          delivered ? group_store.commit(group) : group_store.rollback(group)
+        end
       end
+      group_store.rollback(group) unless accepted
+      accepted
     end
 
     # Receives Rails.error reports. Only unhandled request exceptions are

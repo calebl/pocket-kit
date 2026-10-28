@@ -98,6 +98,15 @@ class ReporterTest(unittest.TestCase):
         self.assertEqual(3, self.report()["group"]["count"])
         self.assertIn("Seen 3 times since", self.report()["text"])
 
+    def test_a_command_failure_does_not_suppress_the_next_matching_error(self):
+        os.environ["FAKE_EXIT"] = "1"
+        self.assertFalse(self.kit.report_error(self.raise_error(1)))
+        os.remove(os.path.join(self.dir, "stdin"))
+
+        os.environ["FAKE_EXIT"] = "0"
+        self.assertTrue(self.kit.report_error(self.raise_error(2)))
+        self.assertEqual(2, self.report()["group"]["count"])
+
     def test_nothing_runs_when_the_variable_is_unset_blank_or_malformed(self):
         for value in (None, "  ", "'unclosed"):
             if value is None:
@@ -170,6 +179,16 @@ class ReporterTest(unittest.TestCase):
         self.assertNotIn("page", sent)
         self.assertNotIn("screen", sent)
 
+    def test_a_page_error_reports_command_failure_and_can_be_retried(self):
+        body = json.dumps({"kind": "error", "message": "boom"}).encode()
+        os.environ["FAKE_EXIT"] = "1"
+        self.assertEqual(503, self.kit.handle_browser_report(body))
+        os.remove(os.path.join(self.dir, "stdin"))
+
+        os.environ["FAKE_EXIT"] = "0"
+        self.assertEqual(202, self.kit.handle_browser_report(body))
+        self.assertEqual(2, self.report()["group"]["count"])
+
     def test_malformed_page_posts_are_refused(self):
         self.assertEqual(400, self.kit.handle_browser_report(b"not json"))
         self.assertEqual(400, self.kit.handle_browser_report(b"[1]"))
@@ -195,12 +214,25 @@ class GroupsTest(unittest.TestCase):
 
     def test_first_is_sent_repeats_held_next_after_window_carries_the_count(self):
         groups = Groups(60)
-        self.assertEqual({"fingerprint": "f", "count": 1, "first_seen": 0, "last_seen": 0}, groups.record("f", 0))
+        first = groups.record("f", 0)
+        self.assertEqual({"fingerprint": "f", "count": 1, "first_seen": 0, "last_seen": 0}, first)
+        groups.commit(first, 0)
         self.assertIsNone(groups.record("f", 10))
         self.assertIsNone(groups.record("f", 20))
-        self.assertEqual({"fingerprint": "f", "count": 3, "first_seen": 10, "last_seen": 61},
-                         groups.record("f", 61))
+        later = groups.record("f", 61)
+        self.assertEqual({"fingerprint": "f", "count": 3, "first_seen": 10, "last_seen": 61}, later)
+        groups.commit(later, 61)
         self.assertEqual(1, groups.record("f", 200)["count"])
+
+    def test_a_failed_delivery_restores_its_occurrence_and_repeats(self):
+        groups = Groups(60)
+        attempt = groups.record("f", 0)
+        self.assertIsNone(groups.record("f", 10))
+
+        groups.rollback(attempt)
+
+        self.assertEqual({"fingerprint": "f", "count": 3, "first_seen": 0, "last_seen": 11},
+                         groups.record("f", 11))
 
     def test_only_max_groups_fingerprints_are_remembered(self):
         groups = Groups(60)

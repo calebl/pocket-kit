@@ -20,12 +20,27 @@ class GroupsTest < ActiveSupport::TestCase
     groups = Groups.new(window: 60)
     start = Time.utc(2026, 1, 1)
 
-    assert_equal({ fingerprint: "f", count: 1, first_seen: start, last_seen: start }, groups.record("f", now: start))
+    first = groups.record("f", now: start)
+    assert_equal({ fingerprint: "f", count: 1, first_seen: start, last_seen: start }, first)
+    groups.commit(first, now: start)
     assert_nil groups.record("f", now: start + 10)
     assert_nil groups.record("f", now: start + 20)
-    assert_equal({ fingerprint: "f", count: 3, first_seen: start + 10, last_seen: start + 61 },
-                 groups.record("f", now: start + 61))
+    later = groups.record("f", now: start + 61)
+    assert_equal({ fingerprint: "f", count: 3, first_seen: start + 10, last_seen: start + 61 }, later)
+    groups.commit(later, now: start + 61)
     assert_equal 1, groups.record("f", now: start + 200)[:count]
+  end
+
+  test "a failed delivery restores its occurrence and repeats" do
+    groups = Groups.new(window: 60)
+    start = Time.utc(2026, 1, 1)
+    attempt = groups.record("f", now: start)
+    assert_nil groups.record("f", now: start + 10)
+
+    groups.rollback(attempt)
+
+    assert_equal({ fingerprint: "f", count: 3, first_seen: start, last_seen: start + 11 },
+                 groups.record("f", now: start + 11))
   end
 
   test "only MAX_GROUPS fingerprints are remembered" do

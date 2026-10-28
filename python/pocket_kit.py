@@ -92,7 +92,7 @@ class Groups:
         now = time.time() if now is None else now
         with self._lock:
             group = self._groups.get(key)
-            if group and now - group["sent_at"] < self.window:
+            if group and (group["attempt"] is not None or now - group["sent_at"] < self.window):
                 group["held"] += 1
                 if group["first_held"] is None:
                     group["first_held"] = now
@@ -101,14 +101,33 @@ class Groups:
             sent = {
                 "fingerprint": key,
                 "count": 1 + (group["held"] if group else 0),
-                "first_seen": (group and group["first_held"]) or now,
+                "first_seen": group["first_held"] if group and group["first_held"] is not None else now,
                 "last_seen": now,
             }
             self._groups.pop(key, None)
-            self._groups[key] = {"sent_at": now, "held": 0, "first_held": None}
+            self._groups[key] = {"sent_at": None, "held": 0, "first_held": None, "attempt": sent}
             while len(self._groups) > MAX_GROUPS:
                 self._groups.popitem(last=False)
             return sent
+
+    def commit(self, group, now=None):
+        now = time.time() if now is None else now
+        with self._lock:
+            current = self._groups.get(group["fingerprint"])
+            if not current or current["attempt"] is not group:
+                return
+            current["sent_at"] = now
+            current["attempt"] = None
+
+    def rollback(self, group):
+        with self._lock:
+            current = self._groups.get(group["fingerprint"])
+            if not current or current["attempt"] is not group:
+                return
+            current["sent_at"] = float("-inf")
+            current["held"] += group["count"]
+            current["first_held"] = group["first_seen"]
+            current["attempt"] = None
 
 
 class Reporter:
@@ -203,8 +222,8 @@ class Reporter:
         backtrace = [line.strip()[:MAX_FRAME] for line in stack.splitlines() if line.strip()]
         page = payload.get("page")
         page = page if isinstance(page, str) and PAGE_FORMAT.match(page) else None
-        self._report_error(error_class, message, backtrace, "browser", None, screen, page)
-        return 202
+        accepted = self._report_error(error_class, message, backtrace, "browser", None, screen, page)
+        return 503 if accepted is False else 202
 
     @staticmethod
     def device(values):
@@ -252,7 +271,15 @@ class Reporter:
                           last_seen=_timestamp(group["last_seen"])),
         }
         report = {key: value for key, value in report.items() if value is not None}
-        return self._send(report)
+        delivered = False
+        try:
+            delivered = self._send(report)
+            return delivered
+        finally:
+            if delivered:
+                self.groups.commit(group)
+            else:
+                self.groups.rollback(group)
 
     def _send(self, report):
         command = self.command()

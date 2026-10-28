@@ -71,6 +71,37 @@ class ErrorsTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "a command failure does not suppress the next matching error" do
+    ENV["FAKE_EXIT"] = "1"
+    post_page_error
+    assert_response :accepted
+    assert report
+    File.delete(File.join(@command_dir, "stdin"))
+
+    ENV["FAKE_EXIT"] = "0"
+    post_page_error
+
+    assert_response :accepted
+    assert_equal 2, report.dig("group", "count")
+  end
+
+  test "a full outbox rejects the request without suppressing a retry" do
+    rejecting_outbox = Object.new
+    rejecting_outbox.define_singleton_method(:push) { |&_delivery| false }
+
+    original_outbox = PocketKit::Errors.instance_variable_get(:@outbox)
+    PocketKit::Errors.instance_variable_set(:@outbox, rejecting_outbox)
+    post_page_error
+    assert_response :service_unavailable
+    PocketKit::Errors.instance_variable_set(:@outbox, original_outbox)
+
+    post_page_error
+    assert_response :accepted
+    assert_equal 2, report.dig("group", "count")
+  ensure
+    PocketKit::Errors.instance_variable_set(:@outbox, original_outbox) if defined?(original_outbox)
+  end
+
   test "an Active Job exception is sent with the job's class" do
     run_job(9)
 

@@ -35,7 +35,7 @@ module PocketKit
       def record(fingerprint, now: Time.now)
         @mutex.synchronize do
           group = @groups[fingerprint]
-          if group && now - group[:sent_at] < @window
+          if group && (group[:attempt] || now - group[:sent_at] < @window)
             group[:held] += 1
             group[:first_held] ||= now
             next
@@ -44,9 +44,31 @@ module PocketKit
           sent = { fingerprint: fingerprint, count: 1 + (group ? group[:held] : 0),
                    first_seen: group&.dig(:first_held) || now, last_seen: now }
           @groups.delete(fingerprint)
-          @groups[fingerprint] = { sent_at: now, held: 0, first_held: nil }
+          @groups[fingerprint] = { sent_at: nil, held: 0, first_held: nil, attempt: sent }
           @groups.shift while @groups.size > MAX_GROUPS
           sent
+        end
+      end
+
+      def commit(group, now: Time.now)
+        @mutex.synchronize do
+          current = @groups[group[:fingerprint]]
+          return unless current&.dig(:attempt).equal?(group)
+
+          current[:sent_at] = now
+          current[:attempt] = nil
+        end
+      end
+
+      def rollback(group)
+        @mutex.synchronize do
+          current = @groups[group[:fingerprint]]
+          return unless current&.dig(:attempt).equal?(group)
+
+          current[:sent_at] = Time.at(0)
+          current[:held] += group[:count]
+          current[:first_held] = group[:first_seen]
+          current[:attempt] = nil
         end
       end
 
