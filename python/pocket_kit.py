@@ -269,8 +269,11 @@ class Reporter:
     def _report_error(self, error_class, message, backtrace, source, context, screen, page):
         if not self.enabled():
             return False
-        if source == "browser" and backtrace and backtrace[0] == "%s: %s" % (error_class, message):
-            backtrace = backtrace[1:]
+        if source == "browser" and backtrace:
+            first = backtrace[0]
+            frame = first.startswith("at ") or "@" in first or re.search(r":\d+(?::\d+)?\)?\Z", first)
+            if not frame:
+                backtrace = backtrace[1:]
         backtrace = backtrace[:BACKTRACE_LINES]
         group = self.groups.record(fingerprint(error_class, message, backtrace[0] if backtrace else ""))
         if group is None:

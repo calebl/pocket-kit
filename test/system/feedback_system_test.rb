@@ -73,7 +73,8 @@ class FeedbackSystemTest < ActionDispatch::SystemTestCase
 
     execute_script("window.feedbackResolvers.shift()({ ok: false })")
     assert_equal false, evaluate_script("document.querySelector('#standalone-feedback [data-pk-failed]').hidden")
-    execute_script("window.submitStandaloneFeedback()")
+    execute_script("document.querySelector('#standalone-feedback textarea').value = 'Retry me '; " \
+                   "window.submitStandaloneFeedback()")
     assert_equal first_id, evaluate_script("window.feedbackRequests[1].request_id")
 
     execute_script("window.feedbackResolvers.shift()({ ok: false })")
@@ -82,11 +83,15 @@ class FeedbackSystemTest < ActionDispatch::SystemTestCase
     edited_id = evaluate_script("window.feedbackRequests[2].request_id")
     assert_not_equal first_id, edited_id
 
-    execute_script("window.feedbackResolvers.shift()({ ok: false })")
     execute_script("document.querySelector('#standalone-feedback [data-pk-close]').click(); " \
+                   "document.querySelector('#standalone-feedback textarea').value = 'After cancel'; " \
                    "window.submitStandaloneFeedback()")
     after_cancel_id = evaluate_script("window.feedbackRequests[3].request_id")
     assert_not_equal edited_id, after_cancel_id
+
+    execute_script("window.feedbackResolvers.shift()({ ok: true })")
+    assert_equal "After cancel", evaluate_script("document.querySelector('#standalone-feedback textarea').value")
+    assert_equal true, evaluate_script("document.querySelector('#standalone-feedback [data-pk-sent]').hidden")
 
     execute_script("window.feedbackResolvers.shift()({ ok: true })")
     assert_selector "#standalone-feedback [data-pk-sent]:not([hidden])"

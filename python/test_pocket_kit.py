@@ -193,15 +193,15 @@ class ReporterTest(unittest.TestCase):
         self.assertEqual("browser", sent["source"])
         self.assertEqual("Error", sent["error"]["class"])
         self.assertEqual("boom", sent["error"]["message"])
-        self.assertEqual(["TypeError: boom", "at save (/static/app.js:3:9)"], sent["error"]["backtrace"])
+        self.assertEqual(["at save (/static/app.js:3:9)"], sent["error"]["backtrace"])
         self.assertNotIn("page", sent)
         self.assertNotIn("screen", sent)
 
-    def test_browser_errors_with_the_same_summary_but_different_top_frames_are_separate_groups(self):
-        first_body = json.dumps({"kind": "error", "class": "TypeError", "message": "boom",
-                                 "stack": "TypeError: boom\n    at alpha (/static/app.js:3:9)"}).encode()
-        second_body = json.dumps({"kind": "error", "class": "TypeError", "message": "boom",
-                                  "stack": "TypeError: boom\n    at beta (/static/app.js:8:4)"}).encode()
+    def test_sanitized_browser_errors_with_different_top_frames_are_separate_groups(self):
+        first_body = json.dumps({"kind": "error", "class": "My Error", "message": "boom",
+                                 "stack": "My Error: boom\n    at alpha (/static/app.js:3:9)"}).encode()
+        second_body = json.dumps({"kind": "error", "class": "My Error", "message": "boom",
+                                  "stack": "My Error: boom\n    at beta (/static/app.js:8:4)"}).encode()
         self.assertEqual(202, self.kit.handle_browser_report(first_body))
         first = self.report()
         self.assertEqual(["at alpha (/static/app.js:3:9)"], first["error"]["backtrace"])

@@ -80,8 +80,35 @@ class ErrorsSystemTest < ActionDispatch::SystemTestCase
 
     assert_equal false, report_on_page("one too many")
     assert_nil recorded("stdin")
+
+    execute_script("document.dispatchEvent(new Event('turbo:load'))")
+    assert_equal true, report_on_page("after navigation")
+    assert_equal "after navigation", wait_for_report.dig("error", "message")
   ensure
     PocketKit::Errors.instance_variable_set(:@outbox, original_outbox) if defined?(original_outbox)
+  end
+
+  test "an old page's pending report cannot contaminate the new page" do
+    visit root_path
+    execute_script(<<~JS)
+      window.errorRequests = []
+      window.errorResolvers = []
+      window.fetch = (_url, options) => {
+        window.errorRequests.push(JSON.parse(options.body))
+        return new Promise((resolve) => window.errorResolvers.push(resolve))
+      }
+      window.navigationError = new Error("navigation error")
+      window.PocketKit.reportError(window.navigationError)
+      document.dispatchEvent(new Event("turbo:load"))
+      window.PocketKit.reportError(window.navigationError)
+    JS
+    assert_equal 2, evaluate_script("window.errorRequests.length")
+
+    execute_script("window.errorResolvers.shift()({ ok: true })")
+    execute_script("window.errorResolvers.shift()({ ok: false })")
+    execute_script("window.PocketKit.reportError(window.navigationError)")
+
+    assert_equal 3, evaluate_script("window.errorRequests.length")
   end
 
   test "a non-Error thrown value is classified as an uncaught error" do

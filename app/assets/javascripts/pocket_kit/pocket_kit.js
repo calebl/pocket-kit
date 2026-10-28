@@ -18,9 +18,7 @@
   if (globalThis.PocketKit) return
 
   const MAX_ERRORS_PER_PAGE = 10
-  const postedErrors = new Set()
-  const pendingErrors = new Set()
-  let errorAttempts = 0
+  let errorState = { posted: new Set(), pending: new Set(), attempts: 0 }
 
   // What the browser says about the device; the server checks every value.
   function describeDevice() {
@@ -77,15 +75,16 @@
       screen: document.querySelector('meta[name="pocket-kit-screen"]')?.content || null
     }
     const key = `${payload.class}\n${payload.message}\n${payload.stack.split("\n", 2).join("\n")}`
-    if (postedErrors.has(key) || pendingErrors.has(key) || errorAttempts >= MAX_ERRORS_PER_PAGE) {
+    const state = errorState
+    if (state.posted.has(key) || state.pending.has(key) || state.attempts >= MAX_ERRORS_PER_PAGE) {
       return Promise.resolve(false)
     }
 
-    pendingErrors.add(key)
-    errorAttempts += 1
+    state.pending.add(key)
+    state.attempts += 1
     return post(path, payload).then((ok) => {
-      pendingErrors.delete(key)
-      if (ok) postedErrors.add(key)
+      state.pending.delete(key)
+      if (ok) state.posted.add(key)
       return ok
     })
   }
@@ -113,6 +112,7 @@
     let requestId = null
     let requestText = null
     let submitting = false
+    let submission = 0
     show(sent, false)
     show(failed, false)
 
@@ -121,6 +121,8 @@
       dialog.showModal()
     })
     root.querySelector("[data-pk-close]")?.addEventListener("click", () => {
+      submission += 1
+      submitting = false
       requestId = null
       requestText = null
       dialog.close()
@@ -130,10 +132,12 @@
       if (submitting) return
 
       submitting = true
+      const currentSubmission = ++submission
       const text = form.elements.text.value
-      if (text !== requestText) {
+      const canonicalText = text.trim()
+      if (canonicalText !== requestText) {
         requestId = randomId()
-        requestText = text
+        requestText = canonicalText
       }
       show(failed, false)
       const payload = {
@@ -144,6 +148,8 @@
         device: describeDevice()
       }
       post(root.dataset.pkFeedback, payload).then((ok) => {
+        if (currentSubmission !== submission) return
+
         submitting = false
         if (ok) {
           requestId = null
@@ -166,5 +172,8 @@
   captureErrors()
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start)
   else start()
-  document.addEventListener("turbo:load", start)
+  document.addEventListener("turbo:load", () => {
+    errorState = { posted: new Set(), pending: new Set(), attempts: 0 }
+    start()
+  })
 })()

@@ -150,12 +150,12 @@ class ErrorsTest < ActionDispatch::IntegrationTest
     assert_equal [ "at save (/assets/app.js:3:9)" ], sent.dig("error", "backtrace")
   end
 
-  test "browser errors with the same summary but different top frames are separate groups" do
-    post_page_error(stack: "TypeError: x is undefined\n    at alpha (/assets/app.js:3:9)")
+  test "sanitized browser errors with different top frames are separate groups" do
+    post_page_error(class: "My Error", message: "boom", stack: "My Error: boom\n    at alpha (/assets/app.js:3:9)")
     first = report
     File.delete(File.join(@command_dir, "stdin"))
 
-    post_page_error(stack: "TypeError: x is undefined\n    at beta (/assets/app.js:8:4)")
+    post_page_error(class: "My Error", message: "boom", stack: "My Error: boom\n    at beta (/assets/app.js:8:4)")
     second = report
 
     assert_response :accepted
@@ -170,6 +170,7 @@ class ErrorsTest < ActionDispatch::IntegrationTest
     sent = report
     assert_equal "Error", sent.dig("error", "class")
     assert_equal "boom", sent.dig("error", "message")
+    assert_equal [ "at save (/assets/app.js:3:9)" ], sent.dig("error", "backtrace")
     assert_nil sent["screen"]
     assert_nil sent["page"]
   end
