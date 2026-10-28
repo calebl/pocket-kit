@@ -4,8 +4,8 @@
 //
 // - Errors: when the page has <meta name="pocket-kit-errors" content="/path">,
 //   uncaught errors and unhandled promise rejections are posted as JSON to that
-//   same-origin path. Each distinct error is posted once per page, and at most
-//   MAX_ERRORS_PER_PAGE in all.
+//   same-origin path. Accepted errors are deduplicated per page, and at most
+//   MAX_ERRORS_PER_PAGE posts are attempted.
 // - Feedback: every element with data-pk-feedback="/path" gets a working
 //   button and dialog (see the README for the markup); the note is posted as
 //   JSON to that same-origin path. Rails apps use the Stimulus controller and
@@ -19,6 +19,8 @@
 
   const MAX_ERRORS_PER_PAGE = 10
   const postedErrors = new Set()
+  const pendingErrors = new Set()
+  let errorAttempts = 0
 
   // What the browser says about the device; the server checks every value.
   function describeDevice() {
@@ -75,10 +77,17 @@
       screen: document.querySelector('meta[name="pocket-kit-screen"]')?.content || null
     }
     const key = `${payload.class}\n${payload.message}\n${payload.stack.split("\n", 2).join("\n")}`
-    if (postedErrors.has(key) || postedErrors.size >= MAX_ERRORS_PER_PAGE) return Promise.resolve(false)
+    if (postedErrors.has(key) || pendingErrors.has(key) || errorAttempts >= MAX_ERRORS_PER_PAGE) {
+      return Promise.resolve(false)
+    }
 
-    postedErrors.add(key)
-    return post(path, payload)
+    pendingErrors.add(key)
+    errorAttempts += 1
+    return post(path, payload).then((ok) => {
+      pendingErrors.delete(key)
+      if (ok) postedErrors.add(key)
+      return ok
+    })
   }
 
   function captureErrors() {

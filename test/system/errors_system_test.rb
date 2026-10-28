@@ -26,6 +26,17 @@ class ErrorsSystemTest < ActionDispatch::SystemTestCase
                    "document.body.append(script)", code)
   end
 
+  def report_on_page(message)
+    page.driver.browser.execute_async_script(<<~JS, message)
+      const done = arguments[arguments.length - 1]
+      window.PocketKit.reportError(new Error(arguments[0])).then(done)
+    JS
+  end
+
+  def rejecting_outbox
+    Object.new.tap { |outbox| outbox.define_singleton_method(:push) { |&_delivery| false } }
+  end
+
   def wait_for_report
     Timeout.timeout(5) do
       until recorded("stdin")
@@ -44,6 +55,33 @@ class ErrorsSystemTest < ActionDispatch::SystemTestCase
     sent = wait_for_report
     assert_equal [ "browser", "pages#note", "/notes/7" ], sent.values_at("source", "screen", "page")
     assert_equal [ "TypeError", "note.title is undefined" ], sent["error"].values_at("class", "message")
+  end
+
+  test "a failed browser post can be retried" do
+    visit root_path
+    original_outbox = PocketKit::Errors.instance_variable_get(:@outbox)
+    PocketKit::Errors.instance_variable_set(:@outbox, rejecting_outbox)
+    assert_equal false, report_on_page("retry me")
+    PocketKit::Errors.instance_variable_set(:@outbox, original_outbox)
+
+    assert_equal true, report_on_page("retry me")
+    assert_equal "retry me", wait_for_report.dig("error", "message")
+    assert_equal false, report_on_page("retry me")
+  ensure
+    PocketKit::Errors.instance_variable_set(:@outbox, original_outbox) if defined?(original_outbox)
+  end
+
+  test "failed browser posts still count toward the per-page attempt limit" do
+    visit root_path
+    original_outbox = PocketKit::Errors.instance_variable_get(:@outbox)
+    PocketKit::Errors.instance_variable_set(:@outbox, rejecting_outbox)
+    10.times { |i| assert_equal false, report_on_page("failure #{i}") }
+    PocketKit::Errors.instance_variable_set(:@outbox, original_outbox)
+
+    assert_equal false, report_on_page("one too many")
+    assert_nil recorded("stdin")
+  ensure
+    PocketKit::Errors.instance_variable_set(:@outbox, original_outbox) if defined?(original_outbox)
   end
 
   test "an unhandled promise rejection is sent" do

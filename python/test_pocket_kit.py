@@ -234,11 +234,24 @@ class GroupsTest(unittest.TestCase):
         self.assertEqual({"fingerprint": "f", "count": 3, "first_seen": 0, "last_seen": 11},
                          groups.record("f", 11))
 
-    def test_only_max_groups_fingerprints_are_remembered(self):
+    def test_only_max_groups_completed_fingerprints_are_remembered(self):
         groups = Groups(60)
         for i in range(pocket_kit.MAX_GROUPS + 1):
-            groups.record("f%d" % i, 0)
+            attempt = groups.record("f%d" % i, 0)
+            groups.commit(attempt, 0)
         self.assertIsNotNone(groups.record("f0", 0))
+        self.assertIsNone(groups.record("f%d" % pocket_kit.MAX_GROUPS, 0))
+
+    def test_an_active_group_is_not_evicted_to_enforce_the_completed_group_limit(self):
+        groups = Groups(60)
+        active = groups.record("active", 0)
+        for i in range(pocket_kit.MAX_GROUPS):
+            attempt = groups.record("f%d" % i, 0)
+            groups.commit(attempt, 0)
+
+        self.assertIsNone(groups.record("active", 1))
+        groups.rollback(active)
+        self.assertEqual(3, groups.record("active", 2)["count"])
 
 
 if __name__ == "__main__":

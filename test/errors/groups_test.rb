@@ -43,12 +43,29 @@ class GroupsTest < ActiveSupport::TestCase
                  groups.record("f", now: start + 11))
   end
 
-  test "only MAX_GROUPS fingerprints are remembered" do
+  test "only MAX_GROUPS completed fingerprints are remembered" do
     groups = Groups.new(window: 60)
     now = Time.utc(2026, 1, 1)
-    (Groups::MAX_GROUPS + 1).times { |i| groups.record("f#{i}", now: now) }
+    (Groups::MAX_GROUPS + 1).times do |i|
+      attempt = groups.record("f#{i}", now: now)
+      groups.commit(attempt, now: now)
+    end
 
-    assert groups.record("f0", now: now), "the oldest group was forgotten, so it is sent again"
+    assert groups.record("f0", now: now), "the oldest completed group was forgotten"
     assert_nil groups.record("f#{Groups::MAX_GROUPS}", now: now)
+  end
+
+  test "an active group is not evicted to enforce the completed group limit" do
+    groups = Groups.new(window: 60)
+    now = Time.utc(2026, 1, 1)
+    active = groups.record("active", now: now)
+    Groups::MAX_GROUPS.times do |i|
+      attempt = groups.record("f#{i}", now: now)
+      groups.commit(attempt, now: now)
+    end
+
+    assert_nil groups.record("active", now: now + 1)
+    groups.rollback(active)
+    assert_equal 3, groups.record("active", now: now + 2)[:count]
   end
 end

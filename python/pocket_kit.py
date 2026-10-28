@@ -92,7 +92,8 @@ class Groups:
         now = time.time() if now is None else now
         with self._lock:
             group = self._groups.get(key)
-            if group and (group["attempt"] is not None or now - group["sent_at"] < self.window):
+            if group and (group["attempt"] is not None or
+                          (group["sent_at"] is not None and now - group["sent_at"] < self.window)):
                 group["held"] += 1
                 if group["first_held"] is None:
                     group["first_held"] = now
@@ -106,8 +107,7 @@ class Groups:
             }
             self._groups.pop(key, None)
             self._groups[key] = {"sent_at": None, "held": 0, "first_held": None, "attempt": sent}
-            while len(self._groups) > MAX_GROUPS:
-                self._groups.popitem(last=False)
+            self._evict_completed()
             return sent
 
     def commit(self, group, now=None):
@@ -118,16 +118,25 @@ class Groups:
                 return
             current["sent_at"] = now
             current["attempt"] = None
+            self._evict_completed()
 
     def rollback(self, group):
         with self._lock:
             current = self._groups.get(group["fingerprint"])
             if not current or current["attempt"] is not group:
                 return
-            current["sent_at"] = float("-inf")
+            current["sent_at"] = None
             current["held"] += group["count"]
             current["first_held"] = group["first_seen"]
             current["attempt"] = None
+
+    def _evict_completed(self):
+        while len(self._groups) > MAX_GROUPS:
+            completed = next((key for key, group in self._groups.items()
+                              if group["sent_at"] is not None), None)
+            if completed is None:
+                return
+            self._groups.pop(completed)
 
 
 class Reporter:

@@ -14,8 +14,8 @@ module PocketKit
     # - The next occurrence after the window is sent, with a count that
     #   includes the repeats held back since the last send.
     #
-    # At most MAX_GROUPS fingerprints are remembered; the least recently sent
-    # is forgotten first.
+    # At most MAX_GROUPS completed fingerprints are remembered; the least
+    # recently sent is forgotten first.
     class Groups
       MAX_GROUPS = 500
 
@@ -35,7 +35,7 @@ module PocketKit
       def record(fingerprint, now: Time.now)
         @mutex.synchronize do
           group = @groups[fingerprint]
-          if group && (group[:attempt] || now - group[:sent_at] < @window)
+          if group && (group[:attempt] || (group[:sent_at] && now - group[:sent_at] < @window))
             group[:held] += 1
             group[:first_held] ||= now
             next
@@ -45,7 +45,7 @@ module PocketKit
                    first_seen: group&.dig(:first_held) || now, last_seen: now }
           @groups.delete(fingerprint)
           @groups[fingerprint] = { sent_at: nil, held: 0, first_held: nil, attempt: sent }
-          @groups.shift while @groups.size > MAX_GROUPS
+          evict_completed
           sent
         end
       end
@@ -57,6 +57,7 @@ module PocketKit
 
           current[:sent_at] = now
           current[:attempt] = nil
+          evict_completed
         end
       end
 
@@ -65,7 +66,7 @@ module PocketKit
           current = @groups[group[:fingerprint]]
           return unless current&.dig(:attempt).equal?(group)
 
-          current[:sent_at] = Time.at(0)
+          current[:sent_at] = nil
           current[:held] += group[:count]
           current[:first_held] = group[:first_seen]
           current[:attempt] = nil
@@ -74,6 +75,17 @@ module PocketKit
 
       def clear
         @mutex.synchronize { @groups.clear }
+      end
+
+      private
+
+      def evict_completed
+        while @groups.size > MAX_GROUPS
+          fingerprint, = @groups.find { |_key, group| group[:sent_at] }
+          break unless fingerprint
+
+          @groups.delete(fingerprint)
+        end
       end
     end
   end
