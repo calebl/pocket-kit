@@ -218,7 +218,8 @@ end
 The command is run the same way as the feedback command (no shell,
 `--request-id <prefix>-<uuid> --json -` appended, 10 seconds), with the JSON
 report on stdin. It runs on a background thread, so a failing request or job
-is not held up by it.
+is not held up by it. Rails queues at most 100 reports; if that queue is full,
+the report remains eligible for a later attempt.
 
 What is reported:
 
@@ -268,8 +269,8 @@ every run of digits in the message counts as `N`, so "Note 4 not found" and
   covering the repeats held back since the last send.
 
 A burst that stops inside the window is reported once; its count comes with
-the next occurrence, if there is one. Each process keeps its own groups, at
-most 500 fingerprints, in memory.
+the next occurrence, if there is one. Each process keeps its own groups in
+memory and remembers at most 500 inactive fingerprints.
 
 ## The report format
 

@@ -75,9 +75,9 @@ On macOS, a launchd agent in `~/Library/LaunchAgents` does the same job.
 
 Secrets and machine-specific settings live in `~/.config/<app>/env`, one
 `KEY=value` per line, mode `600`, never committed. `templates/app.env.example`
-lists the usual ones: the port, the secret key, the VPN host name and the
-feedback command. The repo can then be public without leaking anything, and a
-fresh clone runs once the env file is in place.
+lists the usual ones: the port, the secret key, the VPN host name, and the
+feedback and error-reporting commands. The repo can then be public without
+leaking anything, and a fresh clone runs once the env file is in place.
 
 ## 5. A pinned header that stays put on a phone
 
