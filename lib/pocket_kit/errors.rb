@@ -55,7 +55,9 @@ module PocketKit
     def self.report_exception(error, source:, context: [])
       backtrace = Array(error.backtrace)
       backtrace = Rails.backtrace_cleaner.clean(backtrace).presence || backtrace if defined?(Rails.backtrace_cleaner)
-      report(error_class: error.class.name, message: error.message.to_s, backtrace: backtrace, source: source,
+      error_class = error.class.name
+      error_class = "Error" if error_class.to_s.empty?
+      report(error_class: error_class, message: error.message.to_s, backtrace: backtrace, source: source,
              context: context)
     end
 
@@ -63,10 +65,10 @@ module PocketKit
     def self.report(error_class:, message:, backtrace:, source:, screen: nil, page: nil, context: [])
       return false unless enabled?
 
-      if source == "browser" && backtrace.first
-        first = backtrace.first
-        frame = first.start_with?("at ") || first.include?("@") || first.match?(/:\d+(?::\d+)?\)?\z/)
-        backtrace = backtrace.drop(1) unless frame
+      if source == "browser"
+        backtrace = backtrace.drop_while do |line|
+          !line.start_with?("at ") && !line.include?("@") && !line.match?(/:\d+/)
+        end
       end
       backtrace = backtrace.first(BACKTRACE_LINES)
       group_store = groups

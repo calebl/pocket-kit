@@ -53,6 +53,17 @@ class ErrorsTest < ActionDispatch::IntegrationTest
     assert sent["text"].start_with?("Dummy error (source: request)\n\nNoMethodError: undefined method"), sent["text"]
   end
 
+  test "an anonymous exception class falls back to Error" do
+    error = Class.new(StandardError).new("anonymous failure")
+    error.set_backtrace([ "app/example.rb:1" ])
+
+    assert PocketKit::Errors.report_exception(error, source: "request")
+
+    sent = report
+    assert_equal "Error", sent.dig("error", "class")
+    assert_includes sent["text"], "Error: anonymous failure"
+  end
+
   test "repeats with the same fingerprint are counted, not sent, until the group window passes" do
     get broken_path(1)
     first = report
@@ -151,16 +162,27 @@ class ErrorsTest < ActionDispatch::IntegrationTest
   end
 
   test "sanitized browser errors with different top frames are separate groups" do
-    post_page_error(class: "My Error", message: "boom", stack: "My Error: boom\n    at alpha (/assets/app.js:3:9)")
+    post_page_error(class: "My Error", message: "boom",
+                    stack: "My Error: boom\nCaused by another error\n    at alpha (/assets/app.js:3:9)")
     first = report
     File.delete(File.join(@command_dir, "stdin"))
 
-    post_page_error(class: "My Error", message: "boom", stack: "My Error: boom\n    at beta (/assets/app.js:8:4)")
+    post_page_error(class: "My Error", message: "boom",
+                    stack: "My Error: boom\nCaused by another error\n    at beta (/assets/app.js:8:4)")
     second = report
 
     assert_response :accepted
     assert second
     assert_not_equal first.dig("group", "fingerprint"), second.dig("group", "fingerprint")
+  end
+
+  test "browser frame formats are preserved" do
+    post_page_error(message: "firefox", stack: "TypeError: firefox\nsave@/assets/app.js:3:9")
+    assert_equal [ "save@/assets/app.js:3:9" ], report.dig("error", "backtrace")
+    File.delete(File.join(@command_dir, "stdin"))
+
+    post_page_error(message: "bare", stack: "/assets/app.js:8:4")
+    assert_equal [ "/assets/app.js:8:4" ], report.dig("error", "backtrace")
   end
 
   test "page fields that do not pass their checks are dropped or replaced" do
