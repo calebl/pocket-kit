@@ -14,8 +14,8 @@ module PocketKit
     # - The next occurrence after the window is sent, with a count that
     #   includes the repeats held back since the last send.
     #
-    # At most MAX_GROUPS completed fingerprints are remembered; the least
-    # recently sent is forgotten first.
+    # At most MAX_GROUPS inactive fingerprints are remembered; the oldest is
+    # forgotten first.
     class Groups
       MAX_GROUPS = 500
 
@@ -45,7 +45,7 @@ module PocketKit
                    first_seen: group&.dig(:first_held) || now, last_seen: now }
           @groups.delete(fingerprint)
           @groups[fingerprint] = { sent_at: nil, held: 0, first_held: nil, attempt: sent }
-          evict_completed
+          evict_inactive
           sent
         end
       end
@@ -57,7 +57,7 @@ module PocketKit
 
           current[:sent_at] = now
           current[:attempt] = nil
-          evict_completed
+          evict_inactive
         end
       end
 
@@ -70,6 +70,7 @@ module PocketKit
           current[:held] += group[:count]
           current[:first_held] = group[:first_seen]
           current[:attempt] = nil
+          evict_inactive
         end
       end
 
@@ -79,9 +80,9 @@ module PocketKit
 
       private
 
-      def evict_completed
+      def evict_inactive
         while @groups.size > MAX_GROUPS
-          fingerprint, = @groups.find { |_key, group| group[:sent_at] }
+          fingerprint, = @groups.find { |_key, group| !group[:attempt] }
           break unless fingerprint
 
           @groups.delete(fingerprint)

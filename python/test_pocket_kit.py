@@ -242,7 +242,16 @@ class GroupsTest(unittest.TestCase):
         self.assertIsNotNone(groups.record("f0", 0))
         self.assertIsNone(groups.record("f%d" % pocket_kit.MAX_GROUPS, 0))
 
-    def test_an_active_group_is_not_evicted_to_enforce_the_completed_group_limit(self):
+    def test_failed_groups_are_bounded_and_the_oldest_can_be_retried_as_new(self):
+        groups = Groups(60)
+        for i in range(pocket_kit.MAX_GROUPS + 1):
+            attempt = groups.record("f%d" % i, 0)
+            groups.rollback(attempt)
+
+        self.assertEqual(1, groups.record("f0", 1)["count"])
+        self.assertEqual(2, groups.record("f%d" % pocket_kit.MAX_GROUPS, 1)["count"])
+
+    def test_an_active_group_is_not_evicted_to_enforce_the_inactive_group_limit(self):
         groups = Groups(60)
         active = groups.record("active", 0)
         for i in range(pocket_kit.MAX_GROUPS):

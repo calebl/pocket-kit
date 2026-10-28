@@ -107,7 +107,7 @@ class Groups:
             }
             self._groups.pop(key, None)
             self._groups[key] = {"sent_at": None, "held": 0, "first_held": None, "attempt": sent}
-            self._evict_completed()
+            self._evict_inactive()
             return sent
 
     def commit(self, group, now=None):
@@ -118,7 +118,7 @@ class Groups:
                 return
             current["sent_at"] = now
             current["attempt"] = None
-            self._evict_completed()
+            self._evict_inactive()
 
     def rollback(self, group):
         with self._lock:
@@ -129,14 +129,15 @@ class Groups:
             current["held"] += group["count"]
             current["first_held"] = group["first_seen"]
             current["attempt"] = None
+            self._evict_inactive()
 
-    def _evict_completed(self):
+    def _evict_inactive(self):
         while len(self._groups) > MAX_GROUPS:
-            completed = next((key for key, group in self._groups.items()
-                              if group["sent_at"] is not None), None)
-            if completed is None:
+            inactive = next((key for key, group in self._groups.items()
+                             if group["attempt"] is None), None)
+            if inactive is None:
                 return
-            self._groups.pop(completed)
+            self._groups.pop(inactive)
 
 
 class Reporter:
