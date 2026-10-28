@@ -40,6 +40,48 @@ class FeedbackSystemTest < ActionDispatch::SystemTestCase
     assert_includes stdin, "Home screen app: false\n"
   end
 
+  test "standalone feedback keeps its request id across retries and blocks overlapping sends" do
+    visit root_path
+    execute_script(<<~JS)
+      window.feedbackRequests = []
+      window.feedbackResolvers = []
+      window.fetch = (_url, options) => {
+        window.feedbackRequests.push(JSON.parse(options.body))
+        return new Promise((resolve) => window.feedbackResolvers.push(resolve))
+      }
+      const root = document.createElement("div")
+      root.id = "standalone-feedback"
+      root.dataset.pkFeedback = "/report"
+      root.innerHTML = `
+        <span data-pk-sent hidden>Sent</span>
+        <dialog><form>
+          <textarea name="text"></textarea>
+          <p data-pk-failed hidden>Failed</p>
+        </form></dialog>`
+      document.body.append(root)
+      window.PocketKit.feedback(root)
+      root.querySelector("textarea").value = "Retry me"
+      window.submitStandaloneFeedback = () => root.querySelector("form").dispatchEvent(
+        new Event("submit", { bubbles: true, cancelable: true })
+      )
+    JS
+
+    2.times { execute_script("window.submitStandaloneFeedback()") }
+    assert_equal 1, evaluate_script("window.feedbackRequests.length")
+    first_id = evaluate_script("window.feedbackRequests[0].request_id")
+
+    execute_script("window.feedbackResolvers.shift()({ ok: false })")
+    assert_equal false, evaluate_script("document.querySelector('#standalone-feedback [data-pk-failed]').hidden")
+    execute_script("window.submitStandaloneFeedback()")
+    assert_equal first_id, evaluate_script("window.feedbackRequests[1].request_id")
+
+    execute_script("window.feedbackResolvers.shift()({ ok: true })")
+    assert_selector "#standalone-feedback [data-pk-sent]:not([hidden])"
+    execute_script("document.querySelector('#standalone-feedback textarea').value = 'Another note'; " \
+                   "window.submitStandaloneFeedback()")
+    assert_not_equal first_id, evaluate_script("window.feedbackRequests[2].request_id")
+  end
+
   test "a failed send keeps the dialog open with the text in it" do
     ENV["FAKE_EXIT"] = "1"
     visit root_path

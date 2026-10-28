@@ -52,6 +52,7 @@ BROWSER_REPORTS_PER_MINUTE = 30
 CLASS_FORMAT = re.compile(r"\A[\w$.:]{1,100}\Z")
 PAGE_FORMAT = re.compile(r"\A/[\x20-\x7e]{0,299}\Z")
 SCREEN_FORMAT = re.compile(r"\A[\w./:-]{1,100}#\w{1,100}\Z")
+UUID_FORMAT = re.compile(r"\A[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z")
 CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 
 # What the browser says about the device; a value is kept only if it matches.
@@ -179,10 +180,12 @@ class Reporter:
         backtrace = ['%s:%d:in %s' % (frame.filename, frame.lineno, frame.name) for frame in reversed(frames)]
         return self._report_error(type(error).__name__, str(error), backtrace, source, context, screen, page)
 
-    def report_feedback(self, text, screen=None, context=None, device=None):
+    def report_feedback(self, text, screen=None, context=None, device=None, request_id=None):
         """Sends a feedback note. True when the command took it."""
         text = str(text).strip()
-        if not text or len(text) > MAX_NOTE:
+        if not text or len(text) > MAX_NOTE or (request_id is not None and
+                                                not (isinstance(request_id, str) and
+                                                     UUID_FORMAT.match(request_id))):
             return False
         context = list(context or [])
         device = self.device(device or {})
@@ -195,7 +198,7 @@ class Reporter:
             "occurred_at": _timestamp(time.time()), "screen": screen, "text": message, "note": text,
             "context": context, "device": device,
         }
-        return self._send(report)
+        return self._send(report, request_id=request_id)
 
     def handle_browser_report(self, body):
         """Handles a JSON body posted by pocket_kit.js (an error or a feedback
@@ -217,8 +220,11 @@ class Reporter:
 
         screen = self._screen(payload.get("screen"))
         if payload.get("kind") == "feedback":
+            request_id = payload.get("request_id")
+            if not (isinstance(request_id, str) and UUID_FORMAT.match(request_id)):
+                return 422
             return 200 if self.report_feedback(_string(payload.get("text")), screen=screen,
-                                               device=payload.get("device")) else 422
+                                               device=payload.get("device"), request_id=request_id) else 422
         if payload.get("kind") != "error":
             return 422
 
@@ -291,11 +297,12 @@ class Reporter:
             else:
                 self.groups.rollback(group)
 
-    def _send(self, report):
+    def _send(self, report, request_id=None):
         command = self.command()
         if command is None:
             return False
-        argv = command + ["--request-id", "%s-%s" % (self.request_id_prefix, uuid.uuid4()), "--json", "-"]
+        request_id = request_id or str(uuid.uuid4())
+        argv = command + ["--request-id", "%s-%s" % (self.request_id_prefix, request_id), "--json", "-"]
         body = (json.dumps(report, separators=(",", ":")) + "\n").encode("utf-8")
         try:
             process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,

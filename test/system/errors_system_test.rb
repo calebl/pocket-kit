@@ -84,6 +84,22 @@ class ErrorsSystemTest < ActionDispatch::SystemTestCase
     PocketKit::Errors.instance_variable_set(:@outbox, original_outbox) if defined?(original_outbox)
   end
 
+  test "a non-Error thrown value is classified as an uncaught error" do
+    visit root_path
+    run_on_page("setTimeout(() => { throw 'plain boom' })")
+
+    sent = wait_for_report
+    assert_equal [ "Error", "plain boom" ], sent["error"].values_at("class", "message")
+  end
+
+  test "a non-Error promise rejection is classified as an unhandled rejection" do
+    visit root_path
+    run_on_page("Promise.reject('plain rejection')")
+
+    sent = wait_for_report
+    assert_equal [ "UnhandledRejection", "plain rejection" ], sent["error"].values_at("class", "message")
+  end
+
   test "an unhandled promise rejection is sent" do
     visit root_path
     assert_selector "h1", text: "Home"

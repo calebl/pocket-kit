@@ -10,6 +10,7 @@ import pocket_kit
 from pocket_kit import Groups, Reporter, fingerprint
 
 ENV_NAME = "POCKET_KIT_TEST_COMMAND"
+REQUEST_ID = "0b6f1c1e-6a51-4d6a-9d3e-3f3a0c2e9b11"
 
 
 def gone(pid, wait=2):
@@ -149,20 +150,37 @@ class ReporterTest(unittest.TestCase):
 
     def test_feedback_from_the_page_is_checked_and_sent(self):
         body = json.dumps({"kind": "feedback", "text": "Tags please", "screen": "notes#show",
+                           "request_id": REQUEST_ID,
                            "device": {"pixel_ratio": "3", "screen": "390x844\nforged", "token": "x"}})
 
         self.assertEqual(200, self.kit.handle_browser_report(body.encode()))
         sent = self.report()
+        self.assertEqual("mini-" + REQUEST_ID, self.recorded("args").splitlines()[2])
         self.assertEqual("feedback", sent["kind"])
         self.assertEqual("Tags please", sent["note"])
         self.assertEqual({"pixel_ratio": "3"}, sent["device"])
         self.assertEqual("Mini feedback (screen: notes#show)\n\nTags please\n\nDevice:\nPixel ratio: 3\n",
                          sent["text"])
 
-    def test_empty_and_overlong_feedback_is_refused(self):
-        for text in ("  ", "a" * (pocket_kit.MAX_NOTE + 1)):
-            body = json.dumps({"kind": "feedback", "text": text}).encode()
-            self.assertEqual(422, self.kit.handle_browser_report(body))
+    def test_a_feedback_retry_keeps_the_posted_request_id(self):
+        body = json.dumps({"kind": "feedback", "text": "Retry me", "request_id": REQUEST_ID}).encode()
+        os.environ["FAKE_EXIT"] = "1"
+        self.assertEqual(422, self.kit.handle_browser_report(body))
+        first_args = self.recorded("args")
+
+        os.environ["FAKE_EXIT"] = "0"
+        self.assertEqual(200, self.kit.handle_browser_report(body))
+        self.assertEqual(first_args, self.recorded("args"))
+
+    def test_invalid_feedback_fields_are_refused(self):
+        payloads = [
+            {"kind": "feedback", "text": "  ", "request_id": REQUEST_ID},
+            {"kind": "feedback", "text": "a" * (pocket_kit.MAX_NOTE + 1), "request_id": REQUEST_ID},
+            {"kind": "feedback", "text": "Fine"},
+            {"kind": "feedback", "text": "Fine", "request_id": "not-a-uuid"},
+        ]
+        for payload in payloads:
+            self.assertEqual(422, self.kit.handle_browser_report(json.dumps(payload).encode()))
         self.assertIsNone(self.recorded("stdin"))
 
     def test_an_error_from_the_page_is_checked_and_sent(self):

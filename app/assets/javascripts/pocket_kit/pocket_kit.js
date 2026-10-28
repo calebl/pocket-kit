@@ -63,14 +63,14 @@
   }
 
   // Posts one error. Takes an Error or any thrown value.
-  function reportError(error) {
+  function reportError(error, fallbackClass = "Error") {
     const path = errorsPath()
     if (!path) return Promise.resolve(false)
 
     const isError = error instanceof Error
     const payload = {
       kind: "error",
-      class: isError ? error.name || "Error" : "UnhandledRejection",
+      class: isError ? error.name || "Error" : fallbackClass,
       message: String(isError ? error.message : error).slice(0, 1000),
       stack: isError && error.stack ? String(error.stack).slice(0, 5000) : "",
       page: location.pathname,
@@ -93,10 +93,10 @@
   function captureErrors() {
     window.addEventListener("error", (event) => {
       // Errors from other origins' scripts arrive as "Script error." with nothing in them.
-      if (event.error) reportError(event.error)
-      else if (event.message && event.message !== "Script error.") reportError(new Error(event.message))
+      if (event.error != null) reportError(event.error, "Error")
+      else if (event.message && event.message !== "Script error.") reportError(event.message, "Error")
     })
-    window.addEventListener("unhandledrejection", (event) => reportError(event.reason))
+    window.addEventListener("unhandledrejection", (event) => reportError(event.reason, "UnhandledRejection"))
   }
 
   // Wires one data-pk-feedback element: [data-pk-open] opens its <dialog>,
@@ -110,6 +110,8 @@
     const sent = root.querySelector("[data-pk-sent]")
     const failed = root.querySelector("[data-pk-failed]")
     const show = (element, visible) => { if (element) element.hidden = !visible }
+    let requestId = null
+    let submitting = false
     show(sent, false)
     show(failed, false)
 
@@ -120,16 +122,22 @@
     root.querySelector("[data-pk-close]")?.addEventListener("click", () => dialog.close())
     form.addEventListener("submit", (event) => {
       event.preventDefault()
+      if (submitting) return
+
+      submitting = true
+      requestId ||= randomId()
       show(failed, false)
       const payload = {
         kind: "feedback",
         text: form.elements.text.value,
         screen: root.dataset.pkScreen || null,
-        request_id: randomId(),
+        request_id: requestId,
         device: describeDevice()
       }
       post(root.dataset.pkFeedback, payload).then((ok) => {
+        submitting = false
         if (ok) {
+          requestId = null
           form.reset()
           dialog.close()
         }

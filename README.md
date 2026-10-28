@@ -376,8 +376,9 @@ status = kit.handle_browser_report(request_body_bytes)
 
 `Reporter` also takes `sent_exit_codes` (default `(0, 3)`), `group_window`
 (default 600 seconds), and `screens`, the set of screen names a page may
-claim. `report_feedback(text, screen=None, context=None, device=None)` sends a
-note directly. The command runs in the calling thread and has 10 seconds.
+claim. `report_feedback(text, screen=None, context=None, device=None,
+request_id=None)` sends a note directly. The command runs in the calling thread
+and has 10 seconds.
 `handle_browser_report` checks and caps every field the same way the Rails
 engine does and returns the HTTP status to answer with: 202 or 200 when
 accepted, 404 when no command is configured, 400, 413 or 422 for a bad post,
