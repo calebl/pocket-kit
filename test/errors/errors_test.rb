@@ -147,7 +147,20 @@ class ErrorsTest < ActionDispatch::IntegrationTest
     assert_equal "pages#note", sent["screen"]
     assert_equal "/notes/7", sent["page"]
     assert_equal "TypeError", sent.dig("error", "class")
-    assert_equal [ "TypeError: x is undefined", "at save (/assets/app.js:3:9)" ], sent.dig("error", "backtrace")
+    assert_equal [ "at save (/assets/app.js:3:9)" ], sent.dig("error", "backtrace")
+  end
+
+  test "browser errors with the same summary but different top frames are separate groups" do
+    post_page_error(stack: "TypeError: x is undefined\n    at alpha (/assets/app.js:3:9)")
+    first = report
+    File.delete(File.join(@command_dir, "stdin"))
+
+    post_page_error(stack: "TypeError: x is undefined\n    at beta (/assets/app.js:8:4)")
+    second = report
+
+    assert_response :accepted
+    assert second
+    assert_not_equal first.dig("group", "fingerprint"), second.dig("group", "fingerprint")
   end
 
   test "page fields that do not pass their checks are dropped or replaced" do

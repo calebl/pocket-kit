@@ -197,6 +197,21 @@ class ReporterTest(unittest.TestCase):
         self.assertNotIn("page", sent)
         self.assertNotIn("screen", sent)
 
+    def test_browser_errors_with_the_same_summary_but_different_top_frames_are_separate_groups(self):
+        first_body = json.dumps({"kind": "error", "class": "TypeError", "message": "boom",
+                                 "stack": "TypeError: boom\n    at alpha (/static/app.js:3:9)"}).encode()
+        second_body = json.dumps({"kind": "error", "class": "TypeError", "message": "boom",
+                                  "stack": "TypeError: boom\n    at beta (/static/app.js:8:4)"}).encode()
+        self.assertEqual(202, self.kit.handle_browser_report(first_body))
+        first = self.report()
+        self.assertEqual(["at alpha (/static/app.js:3:9)"], first["error"]["backtrace"])
+        os.remove(os.path.join(self.dir, "stdin"))
+
+        self.assertEqual(202, self.kit.handle_browser_report(second_body))
+        second = self.report()
+        self.assertIsNotNone(second)
+        self.assertNotEqual(first["group"]["fingerprint"], second["group"]["fingerprint"])
+
     def test_a_page_error_reports_command_failure_and_can_be_retried(self):
         body = json.dumps({"kind": "error", "message": "boom"}).encode()
         os.environ["FAKE_EXIT"] = "1"

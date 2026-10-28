@@ -57,6 +57,7 @@ class FeedbackSystemTest < ActionDispatch::SystemTestCase
         <dialog><form>
           <textarea name="text"></textarea>
           <p data-pk-failed hidden>Failed</p>
+          <button type="button" data-pk-close>Cancel</button>
         </form></dialog>`
       document.body.append(root)
       window.PocketKit.feedback(root)
@@ -75,11 +76,23 @@ class FeedbackSystemTest < ActionDispatch::SystemTestCase
     execute_script("window.submitStandaloneFeedback()")
     assert_equal first_id, evaluate_script("window.feedbackRequests[1].request_id")
 
+    execute_script("window.feedbackResolvers.shift()({ ok: false })")
+    execute_script("document.querySelector('#standalone-feedback textarea').value = 'Edited note'; " \
+                   "window.submitStandaloneFeedback()")
+    edited_id = evaluate_script("window.feedbackRequests[2].request_id")
+    assert_not_equal first_id, edited_id
+
+    execute_script("window.feedbackResolvers.shift()({ ok: false })")
+    execute_script("document.querySelector('#standalone-feedback [data-pk-close]').click(); " \
+                   "window.submitStandaloneFeedback()")
+    after_cancel_id = evaluate_script("window.feedbackRequests[3].request_id")
+    assert_not_equal edited_id, after_cancel_id
+
     execute_script("window.feedbackResolvers.shift()({ ok: true })")
     assert_selector "#standalone-feedback [data-pk-sent]:not([hidden])"
     execute_script("document.querySelector('#standalone-feedback textarea').value = 'Another note'; " \
                    "window.submitStandaloneFeedback()")
-    assert_not_equal first_id, evaluate_script("window.feedbackRequests[2].request_id")
+    assert_not_equal after_cancel_id, evaluate_script("window.feedbackRequests[4].request_id")
   end
 
   test "a failed send keeps the dialog open with the text in it" do

@@ -111,6 +111,7 @@
     const failed = root.querySelector("[data-pk-failed]")
     const show = (element, visible) => { if (element) element.hidden = !visible }
     let requestId = null
+    let requestText = null
     let submitting = false
     show(sent, false)
     show(failed, false)
@@ -119,17 +120,25 @@
       show(sent, false)
       dialog.showModal()
     })
-    root.querySelector("[data-pk-close]")?.addEventListener("click", () => dialog.close())
+    root.querySelector("[data-pk-close]")?.addEventListener("click", () => {
+      requestId = null
+      requestText = null
+      dialog.close()
+    })
     form.addEventListener("submit", (event) => {
       event.preventDefault()
       if (submitting) return
 
       submitting = true
-      requestId ||= randomId()
+      const text = form.elements.text.value
+      if (text !== requestText) {
+        requestId = randomId()
+        requestText = text
+      }
       show(failed, false)
       const payload = {
         kind: "feedback",
-        text: form.elements.text.value,
+        text,
         screen: root.dataset.pkScreen || null,
         request_id: requestId,
         device: describeDevice()
@@ -138,6 +147,7 @@
         submitting = false
         if (ok) {
           requestId = null
+          requestText = null
           form.reset()
           dialog.close()
         }

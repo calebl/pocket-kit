@@ -251,7 +251,9 @@ import "pocket_kit"
 ```
 
 The tag names the endpoint and the screen; the page posts nothing without it.
-The page posts each distinct error once, and at most 10 per page load.
+The page posts each distinct error once, and at most 10 per page load. If the
+local command fails, the same error on that page is not re-sent until the page
+reloads.
 
 ### Grouping
 

@@ -63,6 +63,7 @@ module PocketKit
     def self.report(error_class:, message:, backtrace:, source:, screen: nil, page: nil, context: [])
       return false unless enabled?
 
+      backtrace = backtrace.drop(1) if source == "browser" && backtrace.first == "#{error_class}: #{message}"
       backtrace = backtrace.first(BACKTRACE_LINES)
       group_store = groups
       group = group_store.record(Groups.fingerprint(error_class, message, backtrace.first))
