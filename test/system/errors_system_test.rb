@@ -88,6 +88,27 @@ class ErrorsSystemTest < ActionDispatch::SystemTestCase
     PocketKit::Errors.instance_variable_set(:@outbox, original_outbox) if defined?(original_outbox)
   end
 
+  test "client dedupe uses the first normalized stack frame" do
+    visit root_path
+    execute_script(<<~JS)
+      window.errorRequests = []
+      window.fetch = (_url, options) => {
+        window.errorRequests.push(JSON.parse(options.body))
+        return new Promise(() => {})
+      }
+      const alpha = new Error("boom")
+      alpha.stack = "Error: boom\\nCaused by another error\\n    at alpha (/app.js:3:9)"
+      const beta = new Error("boom")
+      beta.stack = "Error: boom\\nCaused by another error\\n    at beta (/app.js:8:4)"
+      window.PocketKit.reportError(alpha)
+      window.PocketKit.reportError(alpha)
+      window.PocketKit.reportError(beta)
+    JS
+
+    assert_equal [ "at alpha (/app.js:3:9)", "at beta (/app.js:8:4)" ],
+                 evaluate_script("window.errorRequests.map((request) => request.stack.split('\\n').at(-1).trim())")
+  end
+
   test "an old page's pending report cannot contaminate the new page" do
     visit root_path
     execute_script(<<~JS)

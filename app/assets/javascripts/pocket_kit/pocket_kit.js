@@ -74,7 +74,10 @@
       page: location.pathname,
       screen: document.querySelector('meta[name="pocket-kit-screen"]')?.content || null
     }
-    const key = `${payload.class}\n${payload.message}\n${payload.stack.split("\n", 2).join("\n")}`
+    const topFrame = payload.stack.split("\n").map((line) => line.trim()).find((line) =>
+      line.startsWith("at ") || line.includes("@") || /:\d+/.test(line)
+    ) || ""
+    const key = `${payload.class}\n${payload.message}\n${topFrame}`
     const state = errorState
     if (state.posted.has(key) || state.pending.has(key) || state.attempts >= MAX_ERRORS_PER_PAGE) {
       return Promise.resolve(false)
