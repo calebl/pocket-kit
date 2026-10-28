@@ -3,4 +3,5 @@ Rails.application.routes.draw do
 
   root "pages#home"
   get "notes/:id", to: "pages#note", as: :note
+  get "broken/:id", to: "pages#broken", as: :broken
 end

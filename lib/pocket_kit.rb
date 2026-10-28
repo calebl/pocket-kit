@@ -3,6 +3,7 @@ require "pocket_kit/engine"
 
 # Each piece lives in its own file and adds its own settings to PocketKit.
 require "pocket_kit/feedback"
+require "pocket_kit/errors"
 
 module PocketKit
   # Yields PocketKit so an initializer can set each piece's options:

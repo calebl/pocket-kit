@@ -2,13 +2,13 @@ module PocketKit
   # Hands a note typed into the feedback dialog to the command configured by
   # PocketKit.feedback.command_env.
   #
-  # No shell. The variable is split into a fixed argument array once, the
-  # request id and `--json -` are appended as further arguments, and the message
-  # goes on the command's stdin. Shell metacharacters stay literal arguments.
+  # The command is run by PocketKit::Command: no shell, `--request-id <id>
+  # --json -` appended, the message on stdin.
   #
   # What is sent: the typed text, the screen as `controller#action` (checked
   # against the app's routes), the app's context_lines, and a "Device:" block of
-  # what the browser reports about itself (each field checked and capped).
+  # what the browser reports about itself (each field checked and capped). With
+  # `format = :json` the same is sent as the shared JSON report.
   #
   # A note counts as sent only when the command exits within 10 seconds with
   # one of sent_exit_codes. A configured command that fails or times out leaves
@@ -17,7 +17,6 @@ module PocketKit
     MAX_LENGTH = 2000
     NOTES_PER_MINUTE = 5
     COMMAND_TIMEOUT = 10
-    TERMINATION_GRACE = 1
     UUID_FORMAT = /\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/
 
     # One store for the process, so the limit holds even where the app's cache
@@ -49,61 +48,16 @@ module PocketKit
     end
 
     def sent?(text, screen, request_id)
-      body = Feedback.message(text: text, screen: screen, context: Array(PocketKit.feedback.context_lines.call(self)),
-                              device: Feedback.device(params[:device]))
-      command = [ *Feedback.command, "--request-id", "#{PocketKit.feedback.request_id_prefix}-#{request_id}",
-                  "--json", "-" ]
-      status = run_command(command, body)
-      status && PocketKit.feedback.sent_exit_codes.include?(status.exitstatus)
-    rescue SystemCallError
-      false
-    end
-
-    def run_command(command, body)
-      input, writer = IO.pipe
-      pid = Process.spawn(*command, in: input, out: File::NULL, err: File::NULL, pgroup: true)
-      input.close
-      writer_thread = Thread.new do
-        writer.write(body)
-      rescue IOError, SystemCallError
-        nil
-      ensure
-        writer.close
+      settings = PocketKit.feedback
+      context = Array(settings.context_lines.call(self))
+      device = Feedback.device(params[:device])
+      body = Feedback.message(text: text, screen: screen, context: context, device: device)
+      if settings.format.to_s == "json"
+        body = Report.to_json(Report.feedback(app: settings.heading, text: text, message: body, screen: screen,
+                                              context: context, device: device))
       end
-
-      status = wait_for(pid, COMMAND_TIMEOUT)
-      terminate(pid) unless status
-      status
-    ensure
-      input&.close unless input&.closed?
-      writer&.close unless writer&.closed?
-      writer_thread&.join
-    end
-
-    def wait_for(pid, timeout)
-      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
-      loop do
-        result = Process.wait2(pid, Process::WNOHANG)
-        return result.last if result
-        return if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
-
-        sleep 0.01
-      end
-    end
-
-    def terminate(pid)
-      signal_group("TERM", pid)
-      sleep TERMINATION_GRACE
-      signal_group("KILL", pid)
-      Process.wait(pid)
-    rescue Errno::ECHILD
-      nil
-    end
-
-    def signal_group(signal, pid)
-      Process.kill(signal, -pid)
-    rescue Errno::ESRCH
-      nil
+      Command.send_report(Feedback.command, request_id: "#{settings.request_id_prefix}-#{request_id}", body: body,
+                                            timeout: COMMAND_TIMEOUT, sent_exit_codes: settings.sent_exit_codes)
     end
 
     # The configured hidden fields as posted, so a fresh form carries them again.

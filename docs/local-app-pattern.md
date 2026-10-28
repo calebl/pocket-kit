@@ -75,9 +75,9 @@ On macOS, a launchd agent in `~/Library/LaunchAgents` does the same job.
 
 Secrets and machine-specific settings live in `~/.config/<app>/env`, one
 `KEY=value` per line, mode `600`, never committed. `templates/app.env.example`
-lists the usual ones: the port, the secret key, the VPN host name and the
-feedback command. The repo can then be public without leaking anything, and a
-fresh clone runs once the env file is in place.
+lists the usual ones: the port, the secret key, the VPN host name, and the
+feedback and error-reporting commands. The repo can then be public without
+leaking anything, and a fresh clone runs once the env file is in place.
 
 ## 5. A pinned header that stays put on a phone
 
@@ -111,6 +111,11 @@ Put pocket-kit's feedback button in the header so notes about the app can be
 sent from the screen they are about. See the README for setup. The note goes to
 a command you choose (a script that files an issue, appends to a file, sends a
 message) together with the screen and what the device reports about itself.
+
+pocket-kit's errors piece sends uncaught page errors and server exceptions to
+a command the same way, grouping repeats, so a broken screen is noticed without
+any outside service. Rails apps use the engine; other apps use the plain
+browser script and, for Python, `python/pocket_kit.py`.
 
 ## 7. A home-screen icon and a manifest
 
