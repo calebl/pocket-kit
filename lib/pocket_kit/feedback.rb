@@ -50,12 +50,13 @@ module PocketKit
     end
 
     # The message on the command's stdin.
-    def self.message(text:, screen:, context: [], device: {})
+    def self.message(text:, screen:, context: [], device: {}, replay: nil)
       lines = [ "#{PocketKit.feedback.heading} (screen: #{screen})", *context ]
       note = "#{lines.join("\n")}\n\n#{text}\n"
-      return note if device.empty?
-
-      "#{note}\nDevice:\n#{device.map { |field, value| "#{DEVICE_FIELDS[field].first}: #{value}" }.join("\n")}\n"
+      unless device.empty?
+        note += "\nDevice:\n#{device.map { |field, value| "#{DEVICE_FIELDS[field].first}: #{value}" }.join("\n")}\n"
+      end
+      replay ? "#{note}\n#{Report.replay_line(replay)}\n" : note
     end
 
     # The device fields that pass their pattern, in DEVICE_FIELDS order.

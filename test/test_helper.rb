@@ -33,3 +33,18 @@ module FakeCommand
     File.read(path) if File.exist?(path)
   end
 end
+
+# Saves replays to a fresh directory and puts the replay settings back after.
+module ReplaySettings
+  def use_replay_directory
+    @replay_dir = Dir.mktmpdir
+    @previous_replay = PocketKit.instance_variable_get(:@replay)
+    PocketKit.instance_variable_set(:@replay, PocketKit::Replay::Configuration.new)
+    PocketKit.replay.directory = @replay_dir
+  end
+
+  def restore_replay_settings
+    PocketKit.instance_variable_set(:@replay, @previous_replay)
+    FileUtils.remove_entry(@replay_dir)
+  end
+end

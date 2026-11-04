@@ -11,6 +11,11 @@ from pocket_kit import Groups, Reporter, fingerprint
 
 ENV_NAME = "POCKET_KIT_TEST_COMMAND"
 REQUEST_ID = "0b6f1c1e-6a51-4d6a-9d3e-3f3a0c2e9b11"
+REPLAY = [
+    {"type": 4, "timestamp": 1000, "data": {"href": "http://localhost/", "width": 390, "height": 844}},
+    {"type": 2, "timestamp": 1001, "data": {"node": {"type": 0, "childNodes": [], "id": 1}}},
+    {"type": 3, "timestamp": 1500, "data": {"source": 5, "text": "*****", "id": 9}},
+]
 
 
 def gone(pid, wait=2):
@@ -246,6 +251,163 @@ class ReporterTest(unittest.TestCase):
         self.assertEqual(413, self.kit.handle_browser_report(bytearray(oversized.encode())))
         self.assertEqual(413, self.kit.handle_browser_report(oversized))
         self.assertEqual(413, self.kit.handle_browser_report("é" * (pocket_kit.MAX_BODY // 2 + 1)))
+
+    def replay_kit(self, **options):
+        self.replay_dir = os.path.join(self.dir, "replays")
+        return Reporter(command_env=ENV_NAME, app="Mini", request_id_prefix="mini", screens={"notes#show"},
+                        replay_dir=self.replay_dir, **options)
+
+    def replay_files(self):
+        if not os.path.isdir(self.replay_dir):
+            return []
+        return sorted(os.path.join(self.replay_dir, name) for name in os.listdir(self.replay_dir))
+
+    def test_a_note_s_replay_is_saved_as_its_own_file_and_named_in_the_report(self):
+        kit = self.replay_kit()
+        body = json.dumps({"kind": "feedback", "text": "Look", "request_id": REQUEST_ID,
+                           "replay": json.dumps(REPLAY)})
+
+        self.assertEqual(200, kit.handle_browser_report(body.encode()))
+        sent = self.report()
+        self.assertEqual(self.replay_files(), [sent["replay"]["path"]])
+        self.assertEqual(3, sent["replay"]["events"])
+        self.assertTrue(sent["text"].endswith("\nReplay: %s\n" % sent["replay"]["path"]))
+        with open(sent["replay"]["path"]) as file:
+            self.assertEqual(REPLAY, json.load(file))
+        self.assertEqual(0o600, stat.S_IMODE(os.stat(sent["replay"]["path"]).st_mode))
+
+    def test_failed_feedback_and_error_reports_delete_their_replays(self):
+        kit = self.replay_kit()
+        os.environ["FAKE_EXIT"] = "1"
+        feedback = json.dumps({"kind": "feedback", "text": "Look", "request_id": REQUEST_ID,
+                               "replay": json.dumps(REPLAY)})
+        error = json.dumps({"kind": "error", "message": "boom", "stack": "at x (/a.js:1:2)",
+                            "replay": json.dumps(REPLAY)})
+
+        self.assertEqual(422, kit.handle_browser_report(feedback.encode()))
+        self.assertEqual([], self.replay_files())
+        self.assertEqual(503, kit.handle_browser_report(error.encode()))
+        self.assertEqual([], self.replay_files())
+
+    def test_a_page_error_s_replay_is_saved_and_named_in_the_report(self):
+        kit = self.replay_kit()
+        body = json.dumps({"kind": "error", "message": "boom", "stack": "at x (/a.js:1:2)",
+                           "replay": json.dumps(REPLAY)})
+
+        self.assertEqual(202, kit.handle_browser_report(body.encode()))
+        sent = self.report()
+        self.assertEqual(self.replay_files(), [sent["replay"]["path"]])
+        self.assertTrue(sent["text"].endswith("\nReplay: %s\n" % sent["replay"]["path"]))
+
+        os.remove(os.path.join(self.dir, "stdin"))
+        self.assertEqual(202, kit.handle_browser_report(body.encode()))
+        self.assertIsNone(self.recorded("stdin"))
+        self.assertEqual(1, len(self.replay_files()))
+
+    def test_a_replay_larger_than_the_old_body_cap_is_accepted(self):
+        kit = self.replay_kit()
+        events = REPLAY + [{"type": 3, "timestamp": 2000, "data": {"text": "x" * pocket_kit.MAX_BODY}}]
+        body = json.dumps({"kind": "feedback", "text": "Big", "request_id": REQUEST_ID,
+                           "replay": json.dumps(events)})
+
+        self.assertEqual(200, kit.handle_browser_report(body.encode()))
+        self.assertEqual(4, self.report()["replay"]["events"])
+
+    def test_a_replay_with_a_non_finite_number_is_left_out(self):
+        kit = self.replay_kit()
+        replay = '[{"type":2,"timestamp":Infinity}]'
+
+        self.assertIsNone(kit.store_replay(replay))
+        self.assertEqual([], self.replay_files())
+
+    def test_a_bad_or_oversize_replay_is_left_out_and_the_report_still_sent(self):
+        kit = self.replay_kit(max_replay_bytes=len(json.dumps(REPLAY)) - 1)
+        for replay in [json.dumps(REPLAY), "not json", json.dumps([{"type": 3, "timestamp": 1}]),
+                       json.dumps({"a": 1}), json.dumps([{"type": "2", "timestamp": 1}]), "[" * 5000, 7]:
+            os.environ["FAKE_EXIT"] = "0"
+            body = json.dumps({"kind": "feedback", "text": "Still sent", "request_id": REQUEST_ID,
+                               "replay": replay})
+            self.assertEqual(200, kit.handle_browser_report(body.encode()))
+            self.assertNotIn("replay", self.report())
+            self.assertNotIn("Replay:", self.report()["text"])
+        self.assertEqual([], self.replay_files())
+
+    def test_an_unwritable_replay_directory_leaves_the_replay_out(self):
+        blocker = os.path.join(self.dir, "blocker")
+        open(blocker, "w").close()
+        kit = Reporter(command_env=ENV_NAME, app="Mini", replay_dir=os.path.join(blocker, "replays"))
+        body = json.dumps({"kind": "feedback", "text": "Still sent", "request_id": REQUEST_ID,
+                           "replay": json.dumps(REPLAY)})
+
+        self.assertEqual(200, kit.handle_browser_report(body.encode()))
+        self.assertNotIn("replay", self.report())
+
+    def test_a_pruning_failure_removes_the_unreferenced_replay(self):
+        kit = self.replay_kit()
+
+        def fail_pruning():
+            raise OSError("cannot prune")
+
+        kit._prune_replays = fail_pruning
+        self.assertIsNone(kit.store_replay(json.dumps(REPLAY)))
+        self.assertEqual([], self.replay_files())
+
+    def test_a_serialization_failure_removes_the_unreferenced_replay(self):
+        kit = self.replay_kit()
+        original_dump = pocket_kit.json.dump
+        pocket_kit.json.dump = lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad json"))
+        try:
+            self.assertIsNone(kit.store_replay(json.dumps(REPLAY)))
+        finally:
+            pocket_kit.json.dump = original_dump
+
+        self.assertEqual([], self.replay_files())
+
+    def test_non_ascii_replays_do_not_expand_when_saved(self):
+        kit = self.replay_kit()
+        events = REPLAY + [{"type": 3, "timestamp": 2000, "data": {"text": "é" * 1000}}]
+        replay = json.dumps(events, ensure_ascii=False, separators=(",", ":"))
+
+        saved = kit.store_replay(replay)
+
+        self.assertLessEqual(os.path.getsize(saved["path"]), len(replay.encode("utf-8")))
+
+    def test_retention_grace_protects_a_replay_while_another_report_completes(self):
+        kit = self.replay_kit(replay_keep=1, timeout=pocket_kit.REPLAY_PRUNE_GRACE + 100)
+        first = kit.store_replay(json.dumps(REPLAY))
+        recent = time.time() - pocket_kit.REPLAY_PRUNE_GRACE - 1
+        os.utime(first["path"], (recent, recent))
+        second = kit.store_replay(json.dumps(REPLAY))
+
+        kit._complete_replay(second, True)
+        self.assertEqual(sorted([first["path"], second["path"]]), self.replay_files())
+        kit._complete_replay(first, True)
+        expired = time.time() - kit._replay_prune_grace - 1
+        for path in self.replay_files():
+            os.utime(path, (expired, expired))
+        third = kit.store_replay(json.dumps(REPLAY))
+        self.assertEqual([third["path"]], self.replay_files())
+
+    def test_only_the_newest_replays_are_kept(self):
+        kit = self.replay_kit(replay_keep=2)
+        for _ in range(3):
+            saved = kit.store_replay(json.dumps(REPLAY))
+            self.assertIsNotNone(saved)
+            kit._complete_replay(saved, True)
+            expired = time.time() - kit._replay_prune_grace - 1
+            os.utime(saved["path"], (expired, expired))
+        self.assertEqual(2, len(self.replay_files()))
+
+    def test_a_deeply_nested_replay_is_refused(self):
+        self.assertIsNone(self.replay_kit().store_replay("[" * 200000 + "]" * 200000))
+
+    def test_without_replay_dir_a_posted_replay_is_ignored(self):
+        body = json.dumps({"kind": "feedback", "text": "Look", "request_id": REQUEST_ID,
+                           "replay": json.dumps(REPLAY)})
+
+        self.assertEqual(200, self.kit.handle_browser_report(body.encode()))
+        self.assertNotIn("replay", self.report())
+        self.assertEqual(413, self.kit.handle_browser_report(b" " * (pocket_kit.MAX_BODY + 1)))
 
     def test_page_posts_are_rate_limited(self):
         for i in range(pocket_kit.BROWSER_REPORTS_PER_MINUTE):

@@ -8,3 +8,5 @@ en:
       send: "Send"
       sent: "Sent"
       failed: "Couldn't send. Your note is still here."
+    replay:
+      title: "Session replay"

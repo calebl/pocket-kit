@@ -22,7 +22,7 @@ module PocketKit
       return head :unprocessable_content if message.blank? || params[:kind] != "error"
 
       accepted = Errors.report(error_class: error_class, message: message, backtrace: backtrace, source: "browser",
-                               screen: screen, page: page)
+                               screen: screen, page: page, replay: -> { Replay.from_request(self) })
       head accepted == false ? :service_unavailable : :accepted
     end
 

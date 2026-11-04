@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title><%= t("pocket_kit.replay.title") %></title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="robots" content="noindex">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'">
+    <%= stylesheet_link_tag PocketKit::Replay::PLAYER_STYLES %>
+    <%= stylesheet_link_tag "pocket_kit/replay" %>
+    <%= javascript_include_tag PocketKit::Replay::PLAYER %>
+    <%= javascript_include_tag "pocket_kit/replay_viewer" %>
+  </head>
+  <body class="pk-replay">
+    <main data-pk-replay-viewer <%= tag.attributes(data: { pk_replay_src: src }) %>>
+      <h1><%= t("pocket_kit.replay.title") %></h1>
+      <p data-pk-replay-status role="status"></p>
+      <div data-pk-replay-stage></div>
+    </main>
+  </body>
+</html>

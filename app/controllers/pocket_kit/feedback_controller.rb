@@ -51,13 +51,20 @@ module PocketKit
       settings = PocketKit.feedback
       context = Array(settings.context_lines.call(self))
       device = Feedback.device(params[:device])
-      body = Feedback.message(text: text, screen: screen, context: context, device: device)
-      if settings.format.to_s == "json"
-        body = Report.to_json(Report.feedback(app: settings.heading, text: text, message: body, screen: screen,
-                                              context: context, device: device))
+      replay = Replay.from_request(self)
+      delivered = false
+      begin
+        body = Feedback.message(text: text, screen: screen, context: context, device: device, replay: replay)
+        if settings.format.to_s == "json"
+          body = Report.to_json(Report.feedback(app: settings.heading, text: text, message: body, screen: screen,
+                                                context: context, device: device, replay: replay))
+        end
+        delivered = Command.send_report(Feedback.command,
+                                        request_id: "#{settings.request_id_prefix}-#{request_id}", body: body,
+                                        timeout: COMMAND_TIMEOUT, sent_exit_codes: settings.sent_exit_codes)
+      ensure
+        Replay.complete(replay, delivered: delivered)
       end
-      Command.send_report(Feedback.command, request_id: "#{settings.request_id_prefix}-#{request_id}", body: body,
-                                            timeout: COMMAND_TIMEOUT, sent_exit_codes: settings.sent_exit_codes)
     end
 
     # The configured hidden fields as posted, so a fresh form carries them again.

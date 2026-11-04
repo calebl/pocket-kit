@@ -62,7 +62,9 @@ module PocketKit
     end
 
     # Reports an error the page's script posted, already checked and capped.
-    def self.report(error_class:, message:, backtrace:, source:, screen: nil, page: nil, context: [])
+    # `replay` is called only when the error is sent, not held as a repeat, and
+    # returns the saved session replay to name in the report, or nil.
+    def self.report(error_class:, message:, backtrace:, source:, screen: nil, page: nil, context: [], replay: nil)
       return false unless enabled?
 
       if source == "browser"
@@ -76,21 +78,30 @@ module PocketKit
       return unless group
 
       settings = PocketKit.errors
-      body = Report.to_json(Report.error(app: settings.heading, source: source, error_class: error_class,
-                                         message: message, backtrace: backtrace, group: group, screen: screen,
-                                         page: page, context: context))
-      request_id = "#{settings.request_id_prefix}-#{SecureRandom.uuid}"
-      command = self.command
-      accepted = outbox.push do
-        delivered = false
-        begin
-          delivered = Command.send_report(command, request_id: request_id, body: body, timeout: COMMAND_TIMEOUT,
-                                                    sent_exit_codes: settings.sent_exit_codes)
-        ensure
-          delivered ? group_store.commit(group) : group_store.rollback(group)
+      saved_replay = replay&.call
+      accepted = false
+      begin
+        body = Report.to_json(Report.error(app: settings.heading, source: source, error_class: error_class,
+                                           message: message, backtrace: backtrace, group: group, screen: screen,
+                                           page: page, context: context, replay: saved_replay))
+        request_id = "#{settings.request_id_prefix}-#{SecureRandom.uuid}"
+        command = self.command
+        accepted = outbox.push do
+          delivered = false
+          begin
+            delivered = Command.send_report(command, request_id: request_id, body: body, timeout: COMMAND_TIMEOUT,
+                                                      sent_exit_codes: settings.sent_exit_codes)
+          ensure
+            delivered ? group_store.commit(group) : group_store.rollback(group)
+            Replay.complete(saved_replay, delivered: delivered)
+          end
+        end
+      ensure
+        unless accepted
+          group_store.rollback(group)
+          Replay.complete(saved_replay, delivered: false)
         end
       end
-      group_store.rollback(group) unless accepted
       accepted
     end
 
