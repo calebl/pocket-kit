@@ -158,9 +158,9 @@ class Reporter:
     may claim; any other screen is dropped.
 
     `replay_dir`, if given, turns on session replay: a replay posted with a
-    browser report is saved there (at most `max_replay_bytes` of JSON, the
-    newest `replay_keep` files kept) and named in the report. Without it, a
-    posted replay is ignored.
+    browser report is saved there (at most `max_replay_bytes` of JSON, with
+    `replay_keep` as the retention target after delivery grace) and named in
+    the report. Without it, a posted replay is ignored.
     """
 
     def __init__(self, command_env="ERRORS_COMMAND", app="App", request_id_prefix="errors",

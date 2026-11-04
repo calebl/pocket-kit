@@ -299,8 +299,8 @@ PocketKit.configure do |config|
   # Where replays are saved (default tmp/pocket_kit/replays in the app).
   config.replay.directory = Rails.root.join("storage/replays")
 
-  # Largest replay accepted, in bytes of JSON (default 1_000_000), and how
-  # many replay files are kept before the oldest are deleted (default 100).
+  # Largest replay accepted, in bytes of JSON (default 1_000_000), and the
+  # retention target once files are old enough to prune (default 100).
   config.replay.max_bytes = 1_000_000
   config.replay.keep = 100
 
@@ -347,6 +347,9 @@ loads the recorder from the app's own assets and starts recording.
   save, is left out and the report is still sent.
 - `replay` is added to the app's `filter_parameters`, so replays stay out of
   the log.
+- Playback blocks resources recorded from other origins, so watching a replay
+  does not contact those sites. The in-app viewer may load the app's own
+  same-origin resources.
 
 ### Where replays go
 
@@ -358,8 +361,11 @@ report names it instead of carrying it. The text format gets a last line:
 Replay: /srv/my-app/tmp/pocket_kit/replays/5f0c…json
 ```
 
-and the JSON report gets a `replay` field (see "The report format"). A repeat
-error held back by grouping saves no replay.
+and the JSON report gets a `replay` field (see "The report format"). A replay
+is deleted when its report is not delivered, and a repeat error held back by
+grouping saves no replay. Retention pruning keeps the newest `keep` files once
+they are older than the delivery grace period, so recent or in-flight reports
+can temporarily leave more files than that target.
 
 ### Watch one
 
@@ -491,7 +497,8 @@ status = kit.handle_browser_report(request_body_bytes)
 `Reporter` also takes `sent_exit_codes` (default `(0, 3)`), `group_window`
 (default 600 seconds), and `screens`, the set of screen names a page may
 claim. For session replay, pass `replay_dir` (off without it), and optionally
-`max_replay_bytes` (default 1000000) and `replay_keep` (default 100); serve
+`max_replay_bytes` (default 1000000) and `replay_keep` (default 100, reached
+once files are old enough to prune); serve
 `rrweb-record-2.1.7.min.js` from `app/assets/javascripts/pocket_kit/vendor/`
 next to `pocket_kit.js` and add the `pocket-kit-replay` meta tag (see "The
 browser core"). If you change `max_replay_bytes`, put the same value in the

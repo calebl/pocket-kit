@@ -14,7 +14,8 @@ module PocketKit
       # drops its oldest events to fit; a bigger one is left out of the report.
       attr_accessor :max_bytes
 
-      # How many replay files are kept; the oldest are deleted past this.
+      # Retention target after files are old enough to prune; recent delivery
+      # files can temporarily exceed it.
       attr_accessor :keep
 
       # Called with the controller; return false to answer the replay pages with

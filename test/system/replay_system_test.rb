@@ -138,7 +138,7 @@ class ReplaySystemTest < ActionDispatch::SystemTestCase
     end
     report = JSON.parse(recorded("stdin"))
     assert_equal "boom", report.dig("error", "message")
-    assert JSON.parse(File.read(report.dig("replay", "path"))).any? { _1["type"] == 2 }
+    assert(JSON.parse(File.read(report.dig("replay", "path"))).any? { _1["type"] == 2 })
     assert_match %r{\A/pocket-kit/replays/\h{8}-}, report.dig("replay", "viewer")
   end
 
