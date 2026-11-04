@@ -72,6 +72,39 @@ class ReplayTest < ActionDispatch::IntegrationTest
     assert report["text"].end_with?("\nReplay: #{saved_files.first}\n")
   end
 
+  test "a failed feedback delivery deletes its replay" do
+    ENV["FAKE_EXIT"] = "1"
+    send_note
+
+    assert_response :unprocessable_content
+    assert_empty saved_files
+  end
+
+  test "a failed error delivery deletes its replay" do
+    ENV["FAKE_EXIT"] = "1"
+    post_error
+
+    assert_empty saved_files
+  end
+
+  test "an error rejected by the outbox deletes its replay" do
+    rejecting_outbox = Object.new
+    def rejecting_outbox.push
+      false
+    end
+
+    ENV["DUMMY_ERRORS_COMMAND"] = "#{@command_script} errors"
+    previous_outbox = PocketKit::Errors.instance_variable_get(:@outbox)
+    PocketKit::Errors.instance_variable_set(:@outbox, rejecting_outbox)
+    post pocket_kit.errors_path, params: { kind: "error", class: "TypeError", message: "queue full",
+                                           stack: "at x (/a.js:1:2)", replay: JSON.generate(EVENTS) }, as: :json
+
+    assert_response :service_unavailable
+    assert_empty saved_files
+  ensure
+    PocketKit::Errors.instance_variable_set(:@outbox, previous_outbox)
+  end
+
   test "a repeat error held back by grouping saves no replay" do
     post_error
     File.delete(File.join(@command_dir, "stdin"))
@@ -110,6 +143,19 @@ class ReplayTest < ActionDispatch::IntegrationTest
       assert_not_includes recorded("stdin"), "Replay:"
     end
     assert_empty saved_files
+  end
+
+  test "a pruning failure removes the unreferenced replay" do
+    original_prune = PocketKit::Replay.method(:prune)
+    PocketKit::Replay.define_singleton_method(:prune) { |_directory| raise Errno::EACCES }
+    send_note
+
+    assert_response :success
+    assert_not_includes recorded("stdin"), "Replay:"
+    assert_empty saved_files
+  ensure
+    PocketKit::Replay.define_singleton_method(:prune, original_prune)
+    PocketKit::Replay.private_class_method(:prune)
   end
 
   test "an unwritable replay directory leaves the replay out and still sends the note" do

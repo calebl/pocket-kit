@@ -276,6 +276,19 @@ class ReporterTest(unittest.TestCase):
             self.assertEqual(REPLAY, json.load(file))
         self.assertEqual(0o600, stat.S_IMODE(os.stat(sent["replay"]["path"]).st_mode))
 
+    def test_failed_feedback_and_error_reports_delete_their_replays(self):
+        kit = self.replay_kit()
+        os.environ["FAKE_EXIT"] = "1"
+        feedback = json.dumps({"kind": "feedback", "text": "Look", "request_id": REQUEST_ID,
+                               "replay": json.dumps(REPLAY)})
+        error = json.dumps({"kind": "error", "message": "boom", "stack": "at x (/a.js:1:2)",
+                            "replay": json.dumps(REPLAY)})
+
+        self.assertEqual(422, kit.handle_browser_report(feedback.encode()))
+        self.assertEqual([], self.replay_files())
+        self.assertEqual(503, kit.handle_browser_report(error.encode()))
+        self.assertEqual([], self.replay_files())
+
     def test_a_page_error_s_replay_is_saved_and_named_in_the_report(self):
         kit = self.replay_kit()
         body = json.dumps({"kind": "error", "message": "boom", "stack": "at x (/a.js:1:2)",
@@ -321,6 +334,25 @@ class ReporterTest(unittest.TestCase):
 
         self.assertEqual(200, kit.handle_browser_report(body.encode()))
         self.assertNotIn("replay", self.report())
+
+    def test_a_pruning_failure_removes_the_unreferenced_replay(self):
+        kit = self.replay_kit()
+
+        def fail_pruning():
+            raise OSError("cannot prune")
+
+        kit._prune_replays = fail_pruning
+        self.assertIsNone(kit.store_replay(json.dumps(REPLAY)))
+        self.assertEqual([], self.replay_files())
+
+    def test_non_ascii_replays_do_not_expand_when_saved(self):
+        kit = self.replay_kit()
+        events = REPLAY + [{"type": 3, "timestamp": 2000, "data": {"text": "é" * 1000}}]
+        replay = json.dumps(events, ensure_ascii=False, separators=(",", ":"))
+
+        saved = kit.store_replay(replay)
+
+        self.assertLessEqual(os.path.getsize(saved["path"]), len(replay.encode("utf-8")))
 
     def test_only_the_newest_replays_are_kept(self):
         kit = self.replay_kit(replay_keep=2)

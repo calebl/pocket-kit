@@ -494,7 +494,8 @@ claim. For session replay, pass `replay_dir` (off without it), and optionally
 `max_replay_bytes` (default 1000000) and `replay_keep` (default 100); serve
 `rrweb-record-2.1.7.min.js` from `app/assets/javascripts/pocket_kit/vendor/`
 next to `pocket_kit.js` and add the `pocket-kit-replay` meta tag (see "The
-browser core"). Replays are viewed with `viewer/replay.html`.
+browser core"). If you change `max_replay_bytes`, put the same value in the
+meta tag's `data-max-bytes`. Replays are viewed with `viewer/replay.html`.
 `report_feedback(text, screen=None, context=None, device=None,
 request_id=None, replay=None)` sends a note directly. The command runs in the calling thread
 and has 10 seconds.

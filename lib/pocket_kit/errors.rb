@@ -78,21 +78,30 @@ module PocketKit
       return unless group
 
       settings = PocketKit.errors
-      body = Report.to_json(Report.error(app: settings.heading, source: source, error_class: error_class,
-                                         message: message, backtrace: backtrace, group: group, screen: screen,
-                                         page: page, context: context, replay: replay&.call))
-      request_id = "#{settings.request_id_prefix}-#{SecureRandom.uuid}"
-      command = self.command
-      accepted = outbox.push do
-        delivered = false
-        begin
-          delivered = Command.send_report(command, request_id: request_id, body: body, timeout: COMMAND_TIMEOUT,
-                                                    sent_exit_codes: settings.sent_exit_codes)
-        ensure
-          delivered ? group_store.commit(group) : group_store.rollback(group)
+      saved_replay = replay&.call
+      accepted = false
+      begin
+        body = Report.to_json(Report.error(app: settings.heading, source: source, error_class: error_class,
+                                           message: message, backtrace: backtrace, group: group, screen: screen,
+                                           page: page, context: context, replay: saved_replay))
+        request_id = "#{settings.request_id_prefix}-#{SecureRandom.uuid}"
+        command = self.command
+        accepted = outbox.push do
+          delivered = false
+          begin
+            delivered = Command.send_report(command, request_id: request_id, body: body, timeout: COMMAND_TIMEOUT,
+                                                      sent_exit_codes: settings.sent_exit_codes)
+          ensure
+            delivered ? group_store.commit(group) : group_store.rollback(group)
+            Replay.discard(saved_replay) unless delivered
+          end
+        end
+      ensure
+        unless accepted
+          group_store.rollback(group)
+          Replay.discard(saved_replay)
         end
       end
-      group_store.rollback(group) unless accepted
       accepted
     end
 

@@ -25,7 +25,7 @@
   const MAX_ERRORS_PER_PAGE = 10
   const REPLAY_WINDOW_MS = 30000
   const REPLAY_CHECKOUT_MS = 10000
-  const REPLAY_MAX_BYTES = 2000000
+  const REPLAY_MAX_BYTES = 1000000
   // fetch() refuses keepalive bodies over 64 KiB, so larger posts go without it.
   const KEEPALIVE_LIMIT = 60000
   let errorState = { posted: new Set(), pending: new Set(), attempts: 0 }
@@ -70,17 +70,28 @@
   // classes hide an element, mask its text, or skip its input events.
   function startReplay() {
     const meta = document.querySelector('meta[name="pocket-kit-replay"]')
-    if (replay || !meta?.content) return
+    const url = meta?.content ? new URL(meta.content, location.href) : null
+    const key = url?.origin === location.origin
+      ? `${url.href}\n${meta.dataset.showTypedText}\n${meta.dataset.maxBytes}`
+      : null
+    if (replay?.key === key) return
 
-    const url = new URL(meta.content, location.href)
-    if (url.origin !== location.origin) return
+    replay?.stop?.()
+    replay = null
+    if (!key) return
 
-    const state = { buffer: new ReplayBuffer(), maxBytes: Number(meta.dataset.maxBytes) || REPLAY_MAX_BYTES }
+    const state = {
+      key,
+      buffer: new ReplayBuffer(),
+      maxBytes: Number(meta.dataset.maxBytes) || REPLAY_MAX_BYTES,
+      stop: null
+    }
     const showTypedText = meta.dataset.showTypedText === "true"
     replay = state
     const begin = () => {
+      if (replay !== state) return
       try {
-        globalThis.rrwebRecord.record({
+        state.stop = globalThis.rrwebRecord.record({
           emit: (event) => state.buffer.add(event),
           checkoutEveryNms: REPLAY_CHECKOUT_MS,
           maskAllInputs: !showTypedText,

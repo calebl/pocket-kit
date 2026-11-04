@@ -53,6 +53,29 @@ class ReplaySystemTest < ActionDispatch::SystemTestCase
     assert_empty Dir.glob(File.join(@replay_dir, "*"))
   end
 
+  test "Turbo navigation clears recording when the new page opts out" do
+    PocketKit.replay.enabled = true
+    visit note_path(7)
+    wait_for_recording
+    find("[data-replay-editor]").set("Earlier private draft")
+
+    PocketKit.replay.enabled = false
+    execute_script("Turbo.visit('#{root_path}')")
+    assert_text "Home"
+    assert_nil evaluate_script("window.PocketKit.replayEvents()")
+    execute_script("document.body.append('Disabled page secret')")
+
+    PocketKit.replay.enabled = true
+    execute_script("Turbo.visit('#{note_path(8)}')")
+    assert_text "Note 8"
+    wait_for_recording
+    send_feedback("After opt out")
+
+    replay_json = saved_replay
+    assert_not_includes replay_json, "Earlier private draft"
+    assert_not_includes replay_json, "Disabled page secret"
+  end
+
   test "a note carries the recent page activity, with typed text masked by default" do
     PocketKit.replay.enabled = true
     visit note_path(7)

@@ -220,7 +220,13 @@ class Reporter:
         }
         if saved:
             report["replay"] = saved
-        return self._send(report, request_id=request_id)
+        delivered = False
+        try:
+            delivered = self._send(report, request_id=request_id)
+            return delivered
+        finally:
+            if not delivered:
+                self._remove_replay(saved)
 
     def store_replay(self, value):
         """Checks a posted replay (a JSON string of rrweb events) and saves it in
@@ -245,11 +251,21 @@ class Reporter:
             os.makedirs(self.replay_dir, mode=0o700, exist_ok=True)
             descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(descriptor, "w", encoding="utf-8") as file:
-                json.dump(events, file, separators=(",", ":"))
+                json.dump(events, file, separators=(",", ":"), ensure_ascii=False)
             self._prune_replays()
         except OSError:
+            self._remove_replay({"path": path})
             return None
         return {"path": os.path.abspath(path), "events": len(events)}
+
+    @staticmethod
+    def _remove_replay(replay):
+        if not replay:
+            return
+        try:
+            os.remove(replay["path"])
+        except OSError:
+            pass
 
     def _prune_replays(self):
         files = [os.path.join(self.replay_dir, name) for name in os.listdir(self.replay_dir)
@@ -374,6 +390,7 @@ class Reporter:
                 self.groups.commit(group)
             else:
                 self.groups.rollback(group)
+                self._remove_replay(saved)
 
     def _send(self, report, request_id=None):
         command = self.command()

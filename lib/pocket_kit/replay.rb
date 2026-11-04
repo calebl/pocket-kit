@@ -43,6 +43,7 @@ module PocketKit
     def self.store(value)
       return unless value.is_a?(String) && !value.empty? && value.bytesize <= PocketKit.replay.max_bytes
 
+      path = nil
       events = JSON.parse(value, max_nesting: MAX_NESTING)
       return unless events?(events)
 
@@ -54,7 +55,12 @@ module PocketKit
       prune(directory)
       { id: id, path: path.to_s, events: events.size }
     rescue JSON::ParserError, SystemCallError, IOError
+      FileUtils.rm_f(path) if path
       nil
+    end
+
+    def self.discard(replay)
+      FileUtils.rm_f(replay[:path]) if replay
     end
 
     # Saves the replay posted to one of the engine's endpoints, when replay is
