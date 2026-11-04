@@ -10,6 +10,11 @@
 //   button and dialog (see the README for the markup); the note is posted as
 //   JSON to that same-origin path. Rails apps use the Stimulus controller and
 //   form instead, which share describeDevice() from here.
+// - Session replay (off unless the page has <meta name="pocket-kit-replay">):
+//   loads the vendored rrweb recorder named by that tag and keeps about the
+//   last REPLAY_WINDOW_MS of page activity in memory. The buffer is never
+//   stored in the browser or sent on its own; it rides along with a feedback
+//   note or an error report when one is posted.
 //
 // Nothing is sent anywhere but the app's own paths.
 (function () {
@@ -18,7 +23,95 @@
   if (globalThis.PocketKit) return
 
   const MAX_ERRORS_PER_PAGE = 10
+  const REPLAY_WINDOW_MS = 30000
+  const REPLAY_CHECKOUT_MS = 10000
+  const REPLAY_MAX_BYTES = 2000000
+  // fetch() refuses keepalive bodies over 64 KiB, so larger posts go without it.
+  const KEEPALIVE_LIMIT = 60000
   let errorState = { posted: new Set(), pending: new Set(), attempts: 0 }
+  let replay = null
+
+  // The last windowMs of rrweb events, in memory only. Events are kept in
+  // segments that each start with rrweb's Meta event and a full snapshot of the
+  // page, so whole segments can be dropped from the front and what remains still
+  // plays back. A segment is dropped once the one after it covers the window.
+  class ReplayBuffer {
+    constructor(windowMs = REPLAY_WINDOW_MS) {
+      this.windowMs = windowMs
+      this.segments = []
+    }
+
+    add(event) {
+      if (event.type === 4 || this.segments.length === 0) this.segments.push([])
+      this.segments[this.segments.length - 1].push(event)
+      this.trim(event.timestamp)
+    }
+
+    trim(now) {
+      while (this.segments.length > 1 && this.segments[1][0].timestamp <= now - this.windowMs) this.segments.shift()
+    }
+
+    // The buffered events as a JSON string of at most maxBytes, dropping the
+    // oldest segments until it fits; null when nothing fits or nothing is buffered.
+    serialize(maxBytes, now = Date.now()) {
+      this.trim(now)
+      for (let start = 0; start < this.segments.length; start += 1) {
+        const json = JSON.stringify(this.segments.slice(start).flat())
+        if (new TextEncoder().encode(json).length <= maxBytes) return json
+      }
+      return null
+    }
+  }
+
+  // Starts recording when the page asks for it. The tag's content is the
+  // same-origin URL of the vendored recorder; data-show-typed-text="true" turns
+  // off rrweb's masking of what is typed into inputs, and data-max-bytes caps
+  // what is attached to a report. rrweb's own rr-block, rr-mask and rr-ignore
+  // classes hide an element, mask its text, or skip its input events.
+  function startReplay() {
+    const meta = document.querySelector('meta[name="pocket-kit-replay"]')
+    if (replay || !meta?.content) return
+
+    const url = new URL(meta.content, location.href)
+    if (url.origin !== location.origin) return
+
+    const state = { buffer: new ReplayBuffer(), maxBytes: Number(meta.dataset.maxBytes) || REPLAY_MAX_BYTES }
+    replay = state
+    const begin = () => {
+      try {
+        globalThis.rrwebRecord.record({
+          emit: (event) => state.buffer.add(event),
+          checkoutEveryNms: REPLAY_CHECKOUT_MS,
+          maskAllInputs: meta.dataset.showTypedText !== "true"
+        })
+      } catch {
+        state.buffer = null
+      }
+    }
+    if (globalThis.rrwebRecord) return begin()
+
+    const script = document.createElement("script")
+    script.src = url.href
+    script.addEventListener("load", begin)
+    script.addEventListener("error", () => { state.buffer = null })
+    document.head.append(script)
+  }
+
+  // The recent page activity as a JSON string of rrweb events, or null when
+  // replay is off, failed to start, or would be over the size cap.
+  function replayEvents() {
+    try {
+      return replay?.buffer ? replay.buffer.serialize(replay.maxBytes) : null
+    } catch {
+      return null
+    }
+  }
+
+  function withReplay(payload) {
+    const events = replayEvents()
+    if (events) payload.replay = events
+    return payload
+  }
 
   // What the browser says about the device; the server checks every value.
   function describeDevice() {
@@ -51,8 +144,9 @@
     const headers = { "Content-Type": "application/json", Accept: "application/json" }
     const token = document.querySelector('meta[name="csrf-token"]')?.content
     if (token) headers["X-CSRF-Token"] = token
-    return fetch(url, { method: "POST", credentials: "same-origin", keepalive: true, headers,
-                        body: JSON.stringify(payload) })
+    const body = JSON.stringify(payload)
+    const keepalive = new Blob([ body ]).size < KEEPALIVE_LIMIT
+    return fetch(url, { method: "POST", credentials: "same-origin", keepalive, headers, body })
       .then((response) => response.ok, () => false)
   }
 
@@ -86,7 +180,7 @@
 
     state.pending.add(key)
     state.attempts += 1
-    return post(path, payload).then((ok) => {
+    return post(path, withReplay(payload)).then((ok) => {
       state.pending.delete(key)
       if (ok) state.posted.add(key)
       return ok
@@ -151,7 +245,7 @@
         request_id: requestId,
         device: describeDevice()
       }
-      post(root.dataset.pkFeedback, payload).then((ok) => {
+      post(root.dataset.pkFeedback, withReplay(payload)).then((ok) => {
         if (currentSubmission !== submission) return
 
         submitting = false
@@ -168,10 +262,11 @@
   }
 
   function start() {
+    startReplay()
     document.querySelectorAll("[data-pk-feedback]").forEach(feedback)
   }
 
-  globalThis.PocketKit = { describeDevice, reportError, feedback, start }
+  globalThis.PocketKit = { describeDevice, reportError, feedback, start, replayEvents, ReplayBuffer }
 
   captureErrors()
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start)

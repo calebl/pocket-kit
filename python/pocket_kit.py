@@ -21,8 +21,12 @@ The command is never run through a shell. It gets
 seconds to finish, and has its process group terminated after that. Repeat
 errors are grouped by the same rule as the Rails engine. Nothing is sent
 anywhere but the command.
+
+With `replay_dir` set, a session replay the page posts with a note or an error
+is checked, saved there as its own JSON file, and named in the report.
 """
 
+import errno
 import hashlib
 import json
 import os
@@ -48,6 +52,9 @@ MAX_STACK = 5000
 MAX_FRAME = 300
 MAX_BODY = 20000
 BROWSER_REPORTS_PER_MINUTE = 30
+MAX_REPLAY_BYTES = 1000000
+REPLAY_KEEP = 100
+FULL_SNAPSHOT = 2
 
 CLASS_FORMAT = re.compile(r"\A[\w$.:]{1,100}\Z")
 PAGE_FORMAT = re.compile(r"\A/[\x20-\x7e]{0,299}\Z")
@@ -147,10 +154,16 @@ class Reporter:
     Off (every call returns False) while the variable is unset, blank, or
     cannot be split. `screens`, if given, is the set of screen names the page
     may claim; any other screen is dropped.
+
+    `replay_dir`, if given, turns on session replay: a replay posted with a
+    browser report is saved there (at most `max_replay_bytes` of JSON, the
+    newest `replay_keep` files kept) and named in the report. Without it, a
+    posted replay is ignored.
     """
 
     def __init__(self, command_env="ERRORS_COMMAND", app="App", request_id_prefix="errors",
-                 sent_exit_codes=(0, 3), group_window=600, screens=None, timeout=COMMAND_TIMEOUT):
+                 sent_exit_codes=(0, 3), group_window=600, screens=None, timeout=COMMAND_TIMEOUT,
+                 replay_dir=None, max_replay_bytes=MAX_REPLAY_BYTES, replay_keep=REPLAY_KEEP):
         self.command_env = command_env
         self.app = app
         self.request_id_prefix = request_id_prefix
@@ -158,6 +171,9 @@ class Reporter:
         self.groups = Groups(group_window)
         self.screens = screens
         self.timeout = timeout
+        self.replay_dir = replay_dir
+        self.max_replay_bytes = max_replay_bytes
+        self.replay_keep = replay_keep
         self._browser_times = []
         self._lock = threading.Lock()
 
@@ -180,8 +196,9 @@ class Reporter:
         backtrace = ['%s:%d:in %s' % (frame.filename, frame.lineno, frame.name) for frame in reversed(frames)]
         return self._report_error(type(error).__name__, str(error), backtrace, source, context, screen, page)
 
-    def report_feedback(self, text, screen=None, context=None, device=None, request_id=None):
-        """Sends a feedback note. True when the command took it."""
+    def report_feedback(self, text, screen=None, context=None, device=None, request_id=None, replay=None):
+        """Sends a feedback note. True when the command took it. `replay` is
+        the JSON string of rrweb events the page posted, if any."""
         text = str(text).strip()
         if not text or len(text) > MAX_NOTE or (request_id is not None and
                                                 not (isinstance(request_id, str) and
@@ -193,12 +210,57 @@ class Reporter:
         message = "\n".join([heading] + context) + "\n\n" + text + "\n"
         if device:
             message += "\nDevice:\n" + "".join("%s: %s\n" % (DEVICE_FIELDS[k][0], v) for k, v in device.items())
+        saved = self.store_replay(replay)
+        if saved:
+            message += "\nReplay: %s\n" % saved["path"]
         report = {
             "version": VERSION, "kind": "feedback", "app": self.app, "source": "browser",
             "occurred_at": _timestamp(time.time()), "screen": screen, "text": message, "note": text,
             "context": context, "device": device,
         }
+        if saved:
+            report["replay"] = saved
         return self._send(report, request_id=request_id)
+
+    def store_replay(self, value):
+        """Checks a posted replay (a JSON string of rrweb events) and saves it in
+        replay_dir. Returns {"path", "events"}, or None when replay is off or the
+        replay is missing, too big, not rrweb events with a full snapshot, or
+        cannot be written."""
+        if not self.replay_dir or not isinstance(value, str) or not value:
+            return None
+        if len(value.encode("utf-8")) > self.max_replay_bytes:
+            return None
+        try:
+            events = json.loads(value)
+        except (ValueError, RecursionError):
+            return None
+        if not (isinstance(events, list) and events and
+                all(isinstance(event, dict) and type(event.get("type")) is int and
+                    type(event.get("timestamp")) in (int, float) for event in events) and
+                any(event["type"] == FULL_SNAPSHOT for event in events)):
+            return None
+        path = os.path.join(self.replay_dir, "%s.json" % uuid.uuid4())
+        try:
+            os.makedirs(self.replay_dir, mode=0o700, exist_ok=True)
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+                json.dump(events, file, separators=(",", ":"))
+            self._prune_replays()
+        except OSError:
+            return None
+        return {"path": os.path.abspath(path), "events": len(events)}
+
+    def _prune_replays(self):
+        files = [os.path.join(self.replay_dir, name) for name in os.listdir(self.replay_dir)
+                 if name.endswith(".json")]
+        files.sort(key=lambda name: os.stat(name).st_mtime)
+        for name in files[:max(len(files) - self.replay_keep, 0)]:
+            try:
+                os.remove(name)
+            except OSError as error:
+                if error.errno != errno.ENOENT:
+                    raise
 
     def handle_browser_report(self, body):
         """Handles a JSON body posted by pocket_kit.js (an error or a feedback
@@ -207,11 +269,13 @@ class Reporter:
             return 404
         if not self._take_browser_slot():
             return 429
+        # A replay rides inside the body as an escaped JSON string, up to twice its size.
+        limit = MAX_BODY + (2 * self.max_replay_bytes if self.replay_dir else 0)
         if isinstance(body, (bytes, bytearray)):
-            if len(body) > MAX_BODY:
+            if len(body) > limit:
                 return 413
             body = body.decode("utf-8", "replace")
-        elif isinstance(body, str) and len(body.encode("utf-8")) > MAX_BODY:
+        elif isinstance(body, str) and len(body.encode("utf-8")) > limit:
             return 413
         try:
             payload = json.loads(body)
@@ -226,7 +290,8 @@ class Reporter:
             if not (isinstance(request_id, str) and UUID_FORMAT.match(request_id)):
                 return 422
             return 200 if self.report_feedback(_string(payload.get("text")), screen=screen,
-                                               device=payload.get("device"), request_id=request_id) else 422
+                                               device=payload.get("device"), request_id=request_id,
+                                               replay=payload.get("replay")) else 422
         if payload.get("kind") != "error":
             return 422
 
@@ -240,7 +305,8 @@ class Reporter:
         backtrace = [line.strip()[:MAX_FRAME] for line in stack.splitlines() if line.strip()]
         page = payload.get("page")
         page = page if isinstance(page, str) and PAGE_FORMAT.match(page) else None
-        accepted = self._report_error(error_class, message, backtrace, "browser", None, screen, page)
+        accepted = self._report_error(error_class, message, backtrace, "browser", None, screen, page,
+                                      replay=payload.get("replay"))
         return 503 if accepted is False else 202
 
     @staticmethod
@@ -268,7 +334,7 @@ class Reporter:
             self._browser_times.append(now)
             return True
 
-    def _report_error(self, error_class, message, backtrace, source, context, screen, page):
+    def _report_error(self, error_class, message, backtrace, source, context, screen, page, replay=None):
         if not self.enabled():
             return False
         if source == "browser":
@@ -286,6 +352,9 @@ class Reporter:
         lines += ["  " + frame for frame in backtrace[:10]]
         if group["count"] > 1:
             lines += ["", "Seen %d times since %s" % (group["count"], _timestamp(group["first_seen"]))]
+        saved = self.store_replay(replay)
+        if saved:
+            lines += ["", "Replay: %s" % saved["path"]]
         report = {
             "version": VERSION, "kind": "error", "app": self.app, "source": source,
             "occurred_at": _timestamp(time.time()), "screen": screen, "page": page,
@@ -293,6 +362,7 @@ class Reporter:
             "error": {"class": error_class, "message": message, "backtrace": backtrace},
             "group": dict(group, first_seen=_timestamp(group["first_seen"]),
                           last_seen=_timestamp(group["last_seen"])),
+            "replay": saved,
         }
         report = {key: value for key, value in report.items() if value is not None}
         delivered = False

@@ -62,7 +62,9 @@ module PocketKit
     end
 
     # Reports an error the page's script posted, already checked and capped.
-    def self.report(error_class:, message:, backtrace:, source:, screen: nil, page: nil, context: [])
+    # `replay` is called only when the error is sent, not held as a repeat, and
+    # returns the saved session replay to name in the report, or nil.
+    def self.report(error_class:, message:, backtrace:, source:, screen: nil, page: nil, context: [], replay: nil)
       return false unless enabled?
 
       if source == "browser"
@@ -78,7 +80,7 @@ module PocketKit
       settings = PocketKit.errors
       body = Report.to_json(Report.error(app: settings.heading, source: source, error_class: error_class,
                                          message: message, backtrace: backtrace, group: group, screen: screen,
-                                         page: page, context: context))
+                                         page: page, context: context, replay: replay&.call))
       request_id = "#{settings.request_id_prefix}-#{SecureRandom.uuid}"
       command = self.command
       accepted = outbox.push do

@@ -14,6 +14,10 @@ adapters. Each piece is separate and optional. Today it has:
 - **Errors**: uncaught page errors, unhandled request exceptions and Active Job
   exceptions go to a local command you choose. Repeats are grouped, so a burst
   runs the command once.
+- **Session replay** (opt-in): the page keeps the last ~30 seconds of activity
+  in memory, recorded with a vendored copy of [rrweb](https://github.com/rrweb-io/rrweb),
+  and sends it along with a feedback note or a page error. The app saves it as
+  a file, the report names the file, and a local viewer plays it back.
 
 Nothing leaves the machine: the page posts only to the app's own paths, and the
 app hands reports only to the local command. There is no third-party service,
@@ -272,6 +276,106 @@ A burst that stops inside the window is reported once; its count comes with
 the next occurrence, if there is one. Each process keeps its own groups in
 memory and remembers at most 500 inactive fingerprints.
 
+## Session replay
+
+Off by default. When an app turns it on, each page records what happens on it
+with rrweb (the open-source recorder Sentry's replays are built on) and keeps
+about the last 30 seconds in memory: never in localStorage, IndexedDB, cookies,
+or the network. When a feedback note or a page error is posted, that recording
+goes with it, to the same endpoint on the app's own origin. With replay off,
+the recorder is never loaded and reports are exactly as before.
+
+### Turn it on
+
+```ruby
+# config/initializers/pocket_kit.rb
+PocketKit.configure do |config|
+  # true, false (the default), or a lambda called with the controller.
+  config.replay.enabled = true
+
+  # Show what is typed into inputs in replays (default false: masked).
+  config.replay.show_typed_text = false
+
+  # Where replays are saved (default tmp/pocket_kit/replays in the app).
+  config.replay.directory = Rails.root.join("storage/replays")
+
+  # Largest replay accepted, in bytes of JSON (default 1_000_000), and how
+  # many replay files are kept before the oldest are deleted (default 100).
+  config.replay.max_bytes = 1_000_000
+  config.replay.keep = 100
+
+  # Who may open the replay pages. Called with the controller; the default
+  # allows only requests from this machine.
+  config.replay.viewer = ->(controller) { controller.request.local? }
+
+  # The replay pages' parent class (default "ApplicationController").
+  config.replay.parent_controller = "ApplicationController"
+end
+```
+
+Then put the tag in `<head>`, next to the others:
+
+```erb
+<head>
+  <%= pocket_kit_errors_tag %>
+  <%= pocket_kit_replay_tag %>
+  <%= javascript_importmap_tags %>
+</head>
+```
+
+The tag renders only when replay is on for the request and the page could send
+a report (the feedback button or page errors are on). The browser core then
+loads the recorder from the app's own assets and starts recording.
+
+### Privacy
+
+- **Typed text is masked.** Everything typed into inputs, textareas and selects
+  is recorded as `*` unless `show_typed_text` is true. Passwords are always
+  masked.
+- **Hide more with rrweb's classes.** Text on the page is recorded as shown.
+  For anything private that is not an input, such as a `contenteditable`
+  editor or the text of a note, add one of rrweb's classes:
+  - `rr-block`: the element is not recorded at all; the replay shows an empty
+    box of the same size.
+  - `rr-mask`: the element's text, and its children's, is replaced with `*`.
+  - `rr-ignore`: input events in the element are not recorded.
+- The recording lives only in the page's memory and is dropped when the page
+  is closed. It is sent only with a report, only to the app's own endpoint.
+- The page caps what it sends at `max_bytes`, dropping its oldest seconds
+  first; the server refuses anything bigger, or anything that is not rrweb
+  events with a full snapshot. A refused replay, or one that fails to record or
+  save, is left out and the report is still sent.
+- `replay` is added to the app's `filter_parameters`, so replays stay out of
+  the log.
+
+### Where replays go
+
+The server saves each accepted replay as `<uuid>.json` (a JSON array of rrweb
+events) in the replay directory, readable only by the app's user, and the
+report names it instead of carrying it. The text format gets a last line:
+
+```
+Replay: /srv/my-app/tmp/pocket_kit/replays/5f0c…json
+```
+
+and the JSON report gets a `replay` field (see "The report format"). A repeat
+error held back by grouping saves no replay.
+
+### Watch one
+
+- **In the app**: open the report's `replay.viewer` path, e.g.
+  `/pocket-kit/replays/<uuid>`, on the app's own address. It plays the replay
+  with the vendored rrweb player. `/pocket-kit/replays` opens a replay file
+  picked from your computer instead.
+- **With no server**: open `viewer/replay.html` from a pocket-kit checkout (or
+  the installed gem's directory, `bundle exec gem contents pocket_kit | grep
+  viewer`) in a browser and pick the replay file. It loads only the vendored
+  files beside it.
+
+rrweb is vendored, pinned to 2.1.7 (`@rrweb/record` and `rrweb-player`), with
+its MIT licence, in `app/assets/javascripts/pocket_kit/vendor/`; see the README
+there.
+
 ## The report format
 
 Both pieces can hand the command the same JSON object, one line on stdin.
@@ -318,6 +422,7 @@ The Python helper sends the same object.
 | `device` | Feedback only: the checked device fields, keyed as in the form. |
 | `error` | Errors only: `class`, `message`, and up to 20 `backtrace` lines. |
 | `group` | Errors only: `fingerprint`, `count` (occurrences this report stands for), `first_seen`, `last_seen`. |
+| `replay` | Only with session replay on and a replay accepted: `path` (the saved file), `events` (how many), and, from Rails, `viewer` (the path that plays it). |
 
 ## The browser core
 
@@ -351,6 +456,13 @@ and starts on its own:
 </div>
 ```
 
+- With `<meta name="pocket-kit-replay" content="/path/rrweb-record-2.1.7.min.js">`
+  in the page, it loads that same-origin recorder and keeps the last ~30
+  seconds in memory, adding them as `"replay"` (a JSON string of rrweb events)
+  to each error and note it posts. `data-show-typed-text="true"` on the tag
+  stops masking inputs, and `data-max-bytes` caps the replay (default
+  1000000). `PocketKit.replayEvents()` returns the current recording.
+
 The core posts only to paths on the page's own origin, sends the page's
 `csrf-token` meta tag as `X-CSRF-Token` when there is one, and treats any 2xx
 answer as sent.
@@ -379,8 +491,13 @@ status = kit.handle_browser_report(request_body_bytes)
 
 `Reporter` also takes `sent_exit_codes` (default `(0, 3)`), `group_window`
 (default 600 seconds), and `screens`, the set of screen names a page may
-claim. `report_feedback(text, screen=None, context=None, device=None,
-request_id=None)` sends a note directly. The command runs in the calling thread
+claim. For session replay, pass `replay_dir` (off without it), and optionally
+`max_replay_bytes` (default 1000000) and `replay_keep` (default 100); serve
+`rrweb-record-2.1.7.min.js` from `app/assets/javascripts/pocket_kit/vendor/`
+next to `pocket_kit.js` and add the `pocket-kit-replay` meta tag (see "The
+browser core"). Replays are viewed with `viewer/replay.html`.
+`report_feedback(text, screen=None, context=None, device=None,
+request_id=None, replay=None)` sends a note directly. The command runs in the calling thread
 and has 10 seconds.
 `handle_browser_report` checks and caps every field the same way the Rails
 engine does and returns the HTTP status to answer with: 202 or 200 when
