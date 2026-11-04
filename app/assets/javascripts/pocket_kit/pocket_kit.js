@@ -65,8 +65,8 @@
 
   // Starts recording when the page asks for it. The tag's content is the
   // same-origin URL of the vendored recorder; data-show-typed-text="true" turns
-  // off rrweb's masking of what is typed into inputs, and data-max-bytes caps
-  // what is attached to a report. rrweb's own rr-block, rr-mask and rr-ignore
+  // off rrweb's masking of user-editable text, and data-max-bytes caps what is
+  // attached to a report. rrweb's own rr-block, rr-mask and rr-ignore
   // classes hide an element, mask its text, or skip its input events.
   function startReplay() {
     const meta = document.querySelector('meta[name="pocket-kit-replay"]')
@@ -76,13 +76,15 @@
     if (url.origin !== location.origin) return
 
     const state = { buffer: new ReplayBuffer(), maxBytes: Number(meta.dataset.maxBytes) || REPLAY_MAX_BYTES }
+    const showTypedText = meta.dataset.showTypedText === "true"
     replay = state
     const begin = () => {
       try {
         globalThis.rrwebRecord.record({
           emit: (event) => state.buffer.add(event),
           checkoutEveryNms: REPLAY_CHECKOUT_MS,
-          maskAllInputs: meta.dataset.showTypedText !== "true"
+          maskAllInputs: !showTypedText,
+          maskTextSelector: showTypedText ? null : "[contenteditable], [contenteditable] *"
         })
       } catch {
         state.buffer = null

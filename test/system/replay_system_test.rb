@@ -57,11 +57,15 @@ class ReplaySystemTest < ActionDispatch::SystemTestCase
     PocketKit.replay.enabled = true
     visit note_path(7)
     wait_for_recording
+    find("[data-replay-editor]").set("Edited private draft")
 
     send_feedback("My private draft")
     events = JSON.parse(saved_replay)
+    replay_json = JSON.generate(events)
     assert events.any? { _1["type"] == 2 }, "has a full snapshot"
-    assert_not_includes JSON.generate(events), "My private draft"
+    assert_not_includes replay_json, "Existing private draft"
+    assert_not_includes replay_json, "Edited private draft"
+    assert_not_includes replay_json, "My private draft"
     assert events.any? { |event| event.dig("data", "text").to_s.match?(/\A\*+\z/) }, "typed text is masked"
   end
 
@@ -70,9 +74,13 @@ class ReplaySystemTest < ActionDispatch::SystemTestCase
     PocketKit.replay.show_typed_text = true
     visit note_path(7)
     wait_for_recording
+    find("[data-replay-editor]").set("Edited visible draft")
 
     send_feedback("Visible words")
-    assert_includes saved_replay, "Visible words"
+    replay_json = saved_replay
+    assert_includes replay_json, "Existing private draft"
+    assert_includes replay_json, "Edited visible draft"
+    assert_includes replay_json, "Visible words"
   end
 
   test "a page error carries the recent page activity" do

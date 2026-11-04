@@ -293,7 +293,7 @@ PocketKit.configure do |config|
   # true, false (the default), or a lambda called with the controller.
   config.replay.enabled = true
 
-  # Show what is typed into inputs in replays (default false: masked).
+  # Show user-editable text in replays (default false: masked).
   config.replay.show_typed_text = false
 
   # Where replays are saved (default tmp/pocket_kit/replays in the app).
@@ -329,12 +329,12 @@ loads the recorder from the app's own assets and starts recording.
 
 ### Privacy
 
-- **Typed text is masked.** Everything typed into inputs, textareas and selects
-  is recorded as `*` unless `show_typed_text` is true. Passwords are always
-  masked.
-- **Hide more with rrweb's classes.** Text on the page is recorded as shown.
-  For anything private that is not an input, such as a `contenteditable`
-  editor or the text of a note, add one of rrweb's classes:
+- **Typed text is masked.** Everything typed into inputs, textareas, selects,
+  and `contenteditable` elements is recorded as `*` unless `show_typed_text`
+  is true. Passwords are always masked.
+- **Hide more with rrweb's classes.** Other text on the page is recorded as
+  shown. For anything else private, such as the displayed text of a note, add
+  one of rrweb's classes:
   - `rr-block`: the element is not recorded at all; the replay shows an empty
     box of the same size.
   - `rr-mask`: the element's text, and its children's, is replaced with `*`.
@@ -459,8 +459,8 @@ and starts on its own:
   in the page, it loads that same-origin recorder and keeps the last ~30
   seconds in memory, adding them as `"replay"` (a JSON string of rrweb events)
   to each error and note it posts. `data-show-typed-text="true"` on the tag
-  stops masking inputs, and `data-max-bytes` caps the replay (default
-  1000000). `PocketKit.replayEvents()` returns the current recording.
+  stops masking user-editable text, and `data-max-bytes` caps the replay
+  (default 1000000). `PocketKit.replayEvents()` returns the current recording.
 
 The core posts only to paths on the page's own origin, sends the page's
 `csrf-token` meta tag as `X-CSRF-Token` when there is one, and treats any 2xx

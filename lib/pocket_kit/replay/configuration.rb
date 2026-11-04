@@ -5,7 +5,7 @@ module PocketKit
       # called with the controller.
       attr_accessor :enabled
 
-      # rrweb masks everything typed into inputs unless this is true.
+      # rrweb masks user-editable text unless this is true.
       attr_accessor :show_typed_text
 
       # Where replays are saved; nil means tmp/pocket_kit/replays under the app.
