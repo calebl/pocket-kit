@@ -147,6 +147,12 @@ class ReplayTest < ActionDispatch::IntegrationTest
     assert_equal "[FILTERED]", filter.filter("replay" => "[]")["replay"]
   end
 
+  test "there is no app replay file picker" do
+    get "/pocket-kit/replays"
+
+    assert_response :not_found
+  end
+
   test "the viewer serves a saved replay as JSON and a player page" do
     send_note
     id = File.basename(saved_files.first, ".json")
@@ -168,8 +174,6 @@ class ReplayTest < ActionDispatch::IntegrationTest
     send_note
     PocketKit.replay.viewer = ->(_controller) { false }
 
-    get pocket_kit.replays_path
-    assert_response :not_found
     get pocket_kit.replay_path(File.basename(saved_files.first, ".json"), format: :json)
     assert_response :not_found
   end

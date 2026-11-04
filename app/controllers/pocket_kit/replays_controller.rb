@@ -1,14 +1,11 @@
 module PocketKit
   # Plays saved session replays on the app's own origin, with the vendored
-  # rrweb player. `index` opens a replay file picked from this computer;
-  # `show` plays one the app saved, and as JSON returns its events. Who may see
-  # them is PocketKit.replay.viewer (by default, only this machine).
+  # rrweb player. `show` plays one the app saved, and as JSON returns its
+  # events. Who may see them is PocketKit.replay.viewer (by default, only this
+  # machine).
   class ReplaysController < PocketKit.replay.parent_controller.constantize
     before_action :require_viewer
     layout false
-
-    def index
-    end
 
     def show
       events = Replay.read(params[:id])

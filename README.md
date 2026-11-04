@@ -365,8 +365,7 @@ error held back by grouping saves no replay.
 
 - **In the app**: open the report's `replay.viewer` path, e.g.
   `/pocket-kit/replays/<uuid>`, on the app's own address. It plays the replay
-  with the vendored rrweb player. `/pocket-kit/replays` opens a replay file
-  picked from your computer instead.
+  with the vendored rrweb player.
 - **With no server**: open `viewer/replay.html` from a pocket-kit checkout (or
   the installed gem's directory, `bundle exec gem contents pocket_kit | grep
   viewer`) in a browser and pick the replay file. It loads only the vendored

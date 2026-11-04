@@ -140,17 +140,12 @@ class ReplaySystemTest < ActionDispatch::SystemTestCase
     assert_selector ".rr-player iframe", visible: :all
   end
 
-  test "the viewer opens a replay file from this computer" do
+  test "the static viewer opens a replay file from this computer" do
     PocketKit.replay.enabled = true
     visit note_path(7)
     wait_for_recording
     send_feedback("Pick me")
     path = recorded("stdin")[/^Replay: (.+)$/, 1]
-
-    visit pocket_kit.replays_path
-    find("input[data-pk-replay-file]").attach_file(path)
-    assert_selector "[data-pk-replay-loaded]"
-    assert_selector ".rr-player iframe", visible: :all
 
     page.driver.browser.navigate.to("file://#{File.expand_path('../../viewer/replay.html', __dir__)}")
     find("input[data-pk-replay-file]").attach_file(path)

@@ -12,9 +12,6 @@
   <body class="pk-replay">
     <main data-pk-replay-viewer <%= tag.attributes(data: { pk_replay_src: src }) %>>
       <h1><%= t("pocket_kit.replay.title") %></h1>
-      <% unless src %>
-        <label><%= t("pocket_kit.replay.pick") %> <input type="file" accept=".json,application/json" data-pk-replay-file></label>
-      <% end %>
       <p data-pk-replay-status role="status"></p>
       <div data-pk-replay-stage></div>
     </main>
