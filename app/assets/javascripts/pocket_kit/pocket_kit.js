@@ -268,7 +268,7 @@
     document.querySelectorAll("[data-pk-feedback]").forEach(feedback)
   }
 
-  globalThis.PocketKit = { describeDevice, reportError, feedback, start, replayEvents, ReplayBuffer }
+  globalThis.PocketKit = { describeDevice, reportError, feedback, start, replayEvents }
 
   captureErrors()
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start)

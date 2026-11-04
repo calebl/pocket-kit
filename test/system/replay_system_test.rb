@@ -104,24 +104,33 @@ class ReplaySystemTest < ActionDispatch::SystemTestCase
     assert_match %r{\A/pocket-kit/replays/\h{8}-}, report.dig("replay", "viewer")
   end
 
-  test "the buffer keeps about the last 30 seconds in whole segments, within the size cap" do
-    visit root_path
-    kept = evaluate_script(<<~JS)
-      (() => {
-        const buffer = new window.PocketKit.ReplayBuffer(30000)
-        const segment = (at) => [ { type: 4, timestamp: at }, { type: 2, timestamp: at }, { type: 3, timestamp: at + 5000 } ]
-        ;[ 0, 10000, 20000 ].forEach((at) => segment(at).forEach((event) => buffer.add(event)))
-        buffer.add({ type: 3, timestamp: 41000 })
-        const firsts = (json) => json && JSON.parse(json).filter((event) => event.type === 4).map((event) => event.timestamp)
-        const all = buffer.serialize(1000000, 41000)
-        const small = buffer.serialize(new TextEncoder().encode(JSON.stringify(buffer.segments.at(-1))).length, 41000)
-        return { all: firsts(all), small: firsts(small), none: buffer.serialize(10, 41000) }
-      })()
+  test "the recorder keeps about the last 30 seconds in whole segments" do
+    page.driver.browser.execute_cdp("Page.addScriptToEvaluateOnNewDocument", source: <<~JS)
+      const realNow = Date.now.bind(Date)
+      Date.now = () => window.__replayNow || realNow()
+    JS
+    PocketKit.replay.enabled = true
+    visit note_path(7)
+    wait_for_recording
+
+    kept = evaluate_async_script(<<~JS)
+      const done = arguments[0]
+      const initial = JSON.parse(window.PocketKit.replayEvents())
+      const base = initial.find((event) => event.type === 4).timestamp
+      window.__replayNow = base + 10000
+      window.rrwebRecord.record.takeFullSnapshot()
+      window.__replayNow = base + 20000
+      window.rrwebRecord.record.takeFullSnapshot()
+      window.__replayNow = base + 41000
+      document.querySelector("[data-replay-editor]").textContent = "Later edit"
+      setTimeout(() => {
+        const events = JSON.parse(window.PocketKit.replayEvents())
+        delete window.__replayNow
+        done(events.filter((event) => event.type === 4).map((event) => event.timestamp - base))
+      }, 0)
     JS
 
-    assert_equal [ 10000, 20000 ], kept["all"]
-    assert_equal [ 20000 ], kept["small"]
-    assert_nil kept["none"]
+    assert_equal [ 10000, 20000, 41000 ], kept
   end
 
   test "a replay over the size cap is left out and the note is still sent" do

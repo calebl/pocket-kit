@@ -1,8 +1,7 @@
 module PocketKit
   module Replay
     class Configuration
-      # Whether pages record a replay: true, false (the default), or a lambda
-      # called with the controller.
+      # Whether pages record a replay: true or false (the default).
       attr_accessor :enabled
 
       # rrweb masks user-editable text unless this is true.

@@ -290,7 +290,7 @@ the recorder is never loaded and reports are exactly as before.
 ```ruby
 # config/initializers/pocket_kit.rb
 PocketKit.configure do |config|
-  # true, false (the default), or a lambda called with the controller.
+  # true, or false (the default), for the whole app.
   config.replay.enabled = true
 
   # Show user-editable text in replays (default false: masked).
@@ -323,8 +323,8 @@ Then put the tag in `<head>`, next to the others:
 </head>
 ```
 
-The tag renders only when replay is on for the request and the page could send
-a report (the feedback button or page errors are on). The browser core then
+The tag renders only when replay is on and the page could send a report (the
+feedback button or page errors are on). The browser core then
 loads the recorder from the app's own assets and starts recording.
 
 ### Privacy

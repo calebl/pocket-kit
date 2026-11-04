@@ -91,16 +91,6 @@ class ReplayTest < ActionDispatch::IntegrationTest
     assert_empty saved_files
   end
 
-  test "replay can be turned on per request" do
-    PocketKit.replay.enabled = ->(controller) { controller.request.cookies["replay"] == "on" }
-    send_note
-    assert_empty saved_files
-
-    cookies["replay"] = "on"
-    send_note
-    assert_equal 1, saved_files.size
-  end
-
   test "a replay over the size cap is left out and the note is still sent" do
     PocketKit.replay.max_bytes = JSON.generate(EVENTS).bytesize - 1
     send_note

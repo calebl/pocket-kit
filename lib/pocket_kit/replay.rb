@@ -23,11 +23,9 @@ module PocketKit
     FULL_SNAPSHOT = 2
     MAX_NESTING = 500
 
-    # Whether this request's page records, and whether a replay posted with a
-    # report is kept.
-    def self.enabled?(controller)
-      enabled = PocketKit.replay.enabled
-      (enabled.respond_to?(:call) ? enabled.call(controller) : enabled) ? true : false
+    # Whether pages record and reports keep a replay.
+    def self.enabled?
+      PocketKit.replay.enabled == true
     end
 
     def self.viewable?(controller)
@@ -60,10 +58,10 @@ module PocketKit
     end
 
     # Saves the replay posted to one of the engine's endpoints, when replay is
-    # on for it. Returns what the report carries ({ path:, events:, viewer: }),
+    # on. Returns what the report carries ({ path:, events:, viewer: }),
     # or nil.
     def self.from_request(controller)
-      return unless enabled?(controller)
+      return unless enabled?
 
       saved = store(controller.params[:replay])
       saved && { path: saved[:path], events: saved[:events], viewer: controller.pocket_kit.replay_path(saved[:id]) }

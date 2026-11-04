@@ -21,7 +21,7 @@
           <%= hidden_field_tag name, value, id: nil if value.present? %>
         <% end %>
         <%= hidden_field_tag :request_id, SecureRandom.uuid, id: nil %>
-        <% if PocketKit::Replay.enabled?(controller) %>
+        <% if PocketKit::Replay.enabled? %>
           <%= hidden_field_tag :replay, "", id: nil, data: { "pocket-kit--feedback-target": "replay" } %>
         <% end %>
         <%= text_area_tag :text, nil, rows: 5, maxlength: PocketKit::FeedbackController::MAX_LENGTH, required: true,
