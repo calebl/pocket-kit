@@ -55,6 +55,7 @@ MAX_BODY = 20000
 BROWSER_REPORTS_PER_MINUTE = 30
 MAX_REPLAY_BYTES = 1000000
 REPLAY_KEEP = 100
+REPLAY_PRUNE_GRACE = 600
 FULL_SNAPSHOT = 2
 
 CLASS_FORMAT = re.compile(r"\A[\w$.:]{1,100}\Z")
@@ -176,7 +177,6 @@ class Reporter:
         self.max_replay_bytes = max_replay_bytes
         self.replay_keep = replay_keep
         self._browser_times = []
-        self._replays_in_flight = set()
         self._lock = threading.Lock()
 
     def command(self):
@@ -251,15 +251,11 @@ class Reporter:
         path = os.path.join(self.replay_dir, "%s.json" % uuid.uuid4())
         try:
             os.makedirs(self.replay_dir, mode=0o700, exist_ok=True)
-            with self._lock:
-                self._replays_in_flight.add(os.path.abspath(path))
             descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(descriptor, "w", encoding="utf-8") as file:
                 json.dump(events, file, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
             self._prune_replays()
         except (OSError, ValueError, RecursionError):
-            with self._lock:
-                self._replays_in_flight.discard(os.path.abspath(path))
             self._remove_replay({"path": path})
             return None
         return {"path": os.path.abspath(path), "events": len(events)}
@@ -277,8 +273,6 @@ class Reporter:
     def _complete_replay(self, replay, delivered):
         if not replay:
             return
-        with self._lock:
-            self._replays_in_flight.discard(replay["path"])
         if delivered:
             try:
                 self._prune_replays()
@@ -299,10 +293,11 @@ class Reporter:
     def _prune_replays(self):
         with self._lock:
             files = [os.path.join(self.replay_dir, name) for name in os.listdir(self.replay_dir)
-                     if name.endswith(".json") and
-                     os.path.abspath(os.path.join(self.replay_dir, name)) not in self._replays_in_flight]
+                     if name.endswith(".json")]
             files.sort(key=lambda name: os.stat(name).st_mtime)
-            for name in files[:max(len(files) - self.replay_keep, 0)]:
+            cutoff = time.time() - REPLAY_PRUNE_GRACE
+            expired = [name for name in files if os.stat(name).st_mtime <= cutoff]
+            for name in expired[:max(len(files) - self.replay_keep, 0)]:
                 try:
                     os.remove(name)
                 except OSError as error:

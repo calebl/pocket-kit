@@ -41,6 +41,21 @@ class ReplaySystemTest < ActionDispatch::SystemTestCase
     File.read(path)
   end
 
+  def assert_cross_origin_resources_blocked
+    directive = evaluate_async_script(<<~JS)
+      const done = arguments[0]
+      const timer = setTimeout(() => done(null), 2000)
+      document.addEventListener("securitypolicyviolation", (event) => {
+        clearTimeout(timer)
+        done(event.effectiveDirective)
+      }, { once: true })
+      const image = document.createElement("img")
+      image.src = "https://example.invalid/pocket-kit-replay.png"
+      document.body.append(image)
+    JS
+    assert_equal "img-src", directive
+  end
+
   test "with replay off, no recorder loads and a note carries no replay" do
     visit note_path(7)
     assert_no_selector "meta[name='pocket-kit-replay']", visible: :all
@@ -178,6 +193,7 @@ class ReplaySystemTest < ActionDispatch::SystemTestCase
     visit pocket_kit.replay_path(id)
     assert_selector "[data-pk-replay-loaded]"
     assert_selector ".rr-player iframe", visible: :all
+    assert_cross_origin_resources_blocked
   end
 
   test "the static viewer opens a replay file from this computer" do
@@ -191,5 +207,6 @@ class ReplaySystemTest < ActionDispatch::SystemTestCase
     find("input[data-pk-replay-file]").attach_file(path)
     assert_selector "[data-pk-replay-loaded]"
     assert_selector ".rr-player iframe", visible: :all
+    assert_cross_origin_resources_blocked
   end
 end

@@ -187,19 +187,22 @@ class ReplayTest < ActionDispatch::IntegrationTest
     assert_not_includes recorded("stdin"), "Replay:"
   end
 
-  test "retention does not delete an in-flight replay" do
+  test "retention grace protects a replay while another report completes" do
     PocketKit.replay.keep = 1
     first = PocketKit::Replay.store(JSON.generate(EVENTS))
+    FileUtils.touch(first[:path], mtime: Time.now - PocketKit::Replay::PRUNE_GRACE_SECONDS + 1)
     second = PocketKit::Replay.store(JSON.generate(EVENTS))
 
+    PocketKit::Replay.complete(second, delivered: true)
     assert_equal [ first[:path], second[:path] ].sort, saved_files
     PocketKit::Replay.complete(first, delivered: true)
-    assert_equal [ first[:path], second[:path] ].sort, saved_files
-    PocketKit::Replay.complete(second, delivered: true)
-    assert_equal [ second[:path] ], saved_files
+    FileUtils.touch(saved_files, mtime: Time.now - PocketKit::Replay::PRUNE_GRACE_SECONDS - 1)
+    third = PocketKit::Replay.store(JSON.generate(EVENTS))
+    assert_equal [ third[:path] ], saved_files
   ensure
     PocketKit::Replay.complete(first, delivered: false) if first
     PocketKit::Replay.complete(second, delivered: false) if second
+    PocketKit::Replay.complete(third, delivered: false) if third
   end
 
   test "only the newest replays are kept" do
@@ -207,7 +210,7 @@ class ReplayTest < ActionDispatch::IntegrationTest
     3.times do |i|
       PocketKit::FeedbackController::RATE_STORE.clear
       send_note
-      FileUtils.touch(saved_files, mtime: Time.now - (10 - i)) if i < 2
+      FileUtils.touch(saved_files, mtime: Time.now - PocketKit::Replay::PRUNE_GRACE_SECONDS - (10 - i)) if i < 2
     end
 
     assert_equal 2, saved_files.size

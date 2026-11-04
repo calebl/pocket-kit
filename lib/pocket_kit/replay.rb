@@ -1,7 +1,6 @@
 require "fileutils"
 require "json"
 require "securerandom"
-require "set"
 require "pocket_kit/engine"
 require "pocket_kit/replay/configuration"
 require "pocket_kit/replay/helper"
@@ -23,8 +22,7 @@ module PocketKit
     ID_FORMAT = /\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/
     FULL_SNAPSHOT = 2
     MAX_NESTING = 500
-    IN_FLIGHT = Set.new
-    IN_FLIGHT_MUTEX = Mutex.new
+    PRUNE_GRACE_SECONDS = 600
 
     # Whether pages record and reports keep a replay.
     def self.enabled?
@@ -54,14 +52,12 @@ module PocketKit
       directory = self.directory
       FileUtils.mkdir_p(directory, mode: 0o700)
       path = directory.join("#{id}.json")
-      track(path)
       File.open(path, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |file|
         file.write(JSON.generate(events, max_nesting: MAX_NESTING))
       end
       prune(directory)
       { id: id, path: path.to_s, events: events.size }
     rescue JSON::ParserError, JSON::GeneratorError, SystemCallError, IOError
-      untrack(path)
       FileUtils.rm_f(path) if path
       nil
     end
@@ -70,7 +66,6 @@ module PocketKit
       return unless replay
 
       path = replay[:path]
-      untrack(path)
       delivered ? prune(Pathname(path).dirname) : FileUtils.rm_f(path)
     rescue SystemCallError, IOError
       nil
@@ -109,22 +104,13 @@ module PocketKit
       end
     end
 
-    def self.track(path)
-      IN_FLIGHT_MUTEX.synchronize { IN_FLIGHT.add(path.to_s) }
-    end
-
-    def self.untrack(path)
-      IN_FLIGHT_MUTEX.synchronize { IN_FLIGHT.delete(path.to_s) } if path
-    end
-
     def self.prune(directory)
-      IN_FLIGHT_MUTEX.synchronize do
-        files = Dir.glob(directory.join("*.json")).reject { IN_FLIGHT.include?(_1) }.sort_by { File.mtime(_1) }
-        files.first([ files.size - PocketKit.replay.keep, 0 ].max).each { FileUtils.rm_f(_1) }
-      end
+      files = Dir.glob(directory.join("*.json")).sort_by { File.mtime(_1) }
+      expired = files.take_while { File.mtime(_1) <= Time.now - PRUNE_GRACE_SECONDS }
+      expired.first([ files.size - PocketKit.replay.keep, 0 ].max).each { FileUtils.rm_f(_1) }
     end
 
-    private_class_method :events?, :finite_numbers?, :track, :untrack, :prune
+    private_class_method :events?, :finite_numbers?, :prune
   end
 
   class Engine

@@ -372,16 +372,21 @@ class ReporterTest(unittest.TestCase):
 
         self.assertLessEqual(os.path.getsize(saved["path"]), len(replay.encode("utf-8")))
 
-    def test_retention_does_not_delete_an_in_flight_replay(self):
+    def test_retention_grace_protects_a_replay_while_another_report_completes(self):
         kit = self.replay_kit(replay_keep=1)
         first = kit.store_replay(json.dumps(REPLAY))
+        recent = time.time() - pocket_kit.REPLAY_PRUNE_GRACE + 1
+        os.utime(first["path"], (recent, recent))
         second = kit.store_replay(json.dumps(REPLAY))
 
+        kit._complete_replay(second, True)
         self.assertEqual(sorted([first["path"], second["path"]]), self.replay_files())
         kit._complete_replay(first, True)
-        self.assertEqual(sorted([first["path"], second["path"]]), self.replay_files())
-        kit._complete_replay(second, True)
-        self.assertEqual([second["path"]], self.replay_files())
+        expired = time.time() - pocket_kit.REPLAY_PRUNE_GRACE - 1
+        for path in self.replay_files():
+            os.utime(path, (expired, expired))
+        third = kit.store_replay(json.dumps(REPLAY))
+        self.assertEqual([third["path"]], self.replay_files())
 
     def test_only_the_newest_replays_are_kept(self):
         kit = self.replay_kit(replay_keep=2)
@@ -389,7 +394,8 @@ class ReporterTest(unittest.TestCase):
             saved = kit.store_replay(json.dumps(REPLAY))
             self.assertIsNotNone(saved)
             kit._complete_replay(saved, True)
-            time.sleep(0.01)
+            expired = time.time() - pocket_kit.REPLAY_PRUNE_GRACE - 1
+            os.utime(saved["path"], (expired, expired))
         self.assertEqual(2, len(self.replay_files()))
 
     def test_a_deeply_nested_replay_is_refused(self):
