@@ -176,6 +176,7 @@ class Reporter:
         self.replay_dir = replay_dir
         self.max_replay_bytes = max_replay_bytes
         self.replay_keep = replay_keep
+        self._replay_prune_grace = max(REPLAY_PRUNE_GRACE, 10 * (self.timeout + TERMINATION_GRACE))
         self._browser_times = []
         self._lock = threading.Lock()
 
@@ -295,7 +296,7 @@ class Reporter:
             files = [os.path.join(self.replay_dir, name) for name in os.listdir(self.replay_dir)
                      if name.endswith(".json")]
             files.sort(key=lambda name: os.stat(name).st_mtime)
-            cutoff = time.time() - REPLAY_PRUNE_GRACE
+            cutoff = time.time() - self._replay_prune_grace
             expired = [name for name in files if os.stat(name).st_mtime <= cutoff]
             for name in expired[:max(len(files) - self.replay_keep, 0)]:
                 try:

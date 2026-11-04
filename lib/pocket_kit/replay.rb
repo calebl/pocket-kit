@@ -22,7 +22,8 @@ module PocketKit
     ID_FORMAT = /\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/
     FULL_SNAPSHOT = 2
     MAX_NESTING = 500
-    PRUNE_GRACE_SECONDS = 600
+    PRUNE_GRACE_SECONDS = (Errors::Outbox::MAX_QUEUED + 1) *
+                            (Errors::COMMAND_TIMEOUT + Command::TERMINATION_GRACE) + 60
 
     # Whether pages record and reports keep a replay.
     def self.enabled?

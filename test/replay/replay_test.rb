@@ -190,7 +190,9 @@ class ReplayTest < ActionDispatch::IntegrationTest
   test "retention grace protects a replay while another report completes" do
     PocketKit.replay.keep = 1
     first = PocketKit::Replay.store(JSON.generate(EVENTS))
-    FileUtils.touch(first[:path], mtime: Time.now - PocketKit::Replay::PRUNE_GRACE_SECONDS + 1)
+    delivery_bound = (PocketKit::Errors::Outbox::MAX_QUEUED + 1) *
+                     (PocketKit::Errors::COMMAND_TIMEOUT + PocketKit::Command::TERMINATION_GRACE)
+    FileUtils.touch(first[:path], mtime: Time.now - delivery_bound - 30)
     second = PocketKit::Replay.store(JSON.generate(EVENTS))
 
     PocketKit::Replay.complete(second, delivered: true)
