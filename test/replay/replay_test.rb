@@ -134,6 +134,26 @@ class ReplayTest < ActionDispatch::IntegrationTest
     assert_empty saved_files
   end
 
+  test "a replay with a non-finite number is left out and the note is still sent" do
+    send_note(replay: '[{"type":2,"timestamp":1e400}]')
+
+    assert_response :success
+    assert_not_includes recorded("stdin"), "Replay:"
+    assert_empty saved_files
+  end
+
+  test "a deeply nested replay within the supported limit is saved" do
+    node = {}
+    150.times { node = { child: node } }
+    replay = JSON.generate([ { type: 2, timestamp: 1, data: { node: node } } ], max_nesting: false)
+
+    send_note(replay: replay)
+
+    assert_response :success
+    assert_equal 1, saved_files.size
+    assert_equal 2, JSON.parse(File.read(saved_files.first), max_nesting: 500).first["type"]
+  end
+
   test "a malformed or snapshot-less replay is left out and the note is still sent" do
     [ "not json", JSON.generate([ { type: 3, timestamp: 1 } ]), JSON.generate({ a: 1 }),
       JSON.generate([ { type: "2", timestamp: 1 } ]), "#{'[' * 1000}#{']' * 1000}" ].each do |replay|
@@ -165,6 +185,21 @@ class ReplayTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_not_includes recorded("stdin"), "Replay:"
+  end
+
+  test "retention does not delete an in-flight replay" do
+    PocketKit.replay.keep = 1
+    first = PocketKit::Replay.store(JSON.generate(EVENTS))
+    second = PocketKit::Replay.store(JSON.generate(EVENTS))
+
+    assert_equal [ first[:path], second[:path] ].sort, saved_files
+    PocketKit::Replay.complete(first, delivered: true)
+    assert_equal [ first[:path], second[:path] ].sort, saved_files
+    PocketKit::Replay.complete(second, delivered: true)
+    assert_equal [ second[:path] ], saved_files
+  ensure
+    PocketKit::Replay.complete(first, delivered: false) if first
+    PocketKit::Replay.complete(second, delivered: false) if second
   end
 
   test "only the newest replays are kept" do

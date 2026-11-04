@@ -29,6 +29,7 @@ is checked, saved there as its own JSON file, and named in the report.
 import errno
 import hashlib
 import json
+import math
 import os
 import re
 import shlex
@@ -175,6 +176,7 @@ class Reporter:
         self.max_replay_bytes = max_replay_bytes
         self.replay_keep = replay_keep
         self._browser_times = []
+        self._replays_in_flight = set()
         self._lock = threading.Lock()
 
     def command(self):
@@ -225,8 +227,7 @@ class Reporter:
             delivered = self._send(report, request_id=request_id)
             return delivered
         finally:
-            if not delivered:
-                self._remove_replay(saved)
+            self._complete_replay(saved, delivered)
 
     def store_replay(self, value):
         """Checks a posted replay (a JSON string of rrweb events) and saves it in
@@ -244,19 +245,47 @@ class Reporter:
         if not (isinstance(events, list) and events and
                 all(isinstance(event, dict) and type(event.get("type")) is int and
                     type(event.get("timestamp")) in (int, float) for event in events) and
-                any(event["type"] == FULL_SNAPSHOT for event in events)):
+                any(event["type"] == FULL_SNAPSHOT for event in events) and
+                self._finite_numbers(events)):
             return None
         path = os.path.join(self.replay_dir, "%s.json" % uuid.uuid4())
         try:
             os.makedirs(self.replay_dir, mode=0o700, exist_ok=True)
+            with self._lock:
+                self._replays_in_flight.add(os.path.abspath(path))
             descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(descriptor, "w", encoding="utf-8") as file:
-                json.dump(events, file, separators=(",", ":"), ensure_ascii=False)
+                json.dump(events, file, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
             self._prune_replays()
-        except OSError:
+        except (OSError, ValueError, RecursionError):
+            with self._lock:
+                self._replays_in_flight.discard(os.path.abspath(path))
             self._remove_replay({"path": path})
             return None
         return {"path": os.path.abspath(path), "events": len(events)}
+
+    @classmethod
+    def _finite_numbers(cls, value):
+        if isinstance(value, float):
+            return math.isfinite(value)
+        if isinstance(value, list):
+            return all(cls._finite_numbers(item) for item in value)
+        if isinstance(value, dict):
+            return all(cls._finite_numbers(item) for item in value.values())
+        return True
+
+    def _complete_replay(self, replay, delivered):
+        if not replay:
+            return
+        with self._lock:
+            self._replays_in_flight.discard(replay["path"])
+        if delivered:
+            try:
+                self._prune_replays()
+            except OSError:
+                pass
+        else:
+            self._remove_replay(replay)
 
     @staticmethod
     def _remove_replay(replay):
@@ -268,15 +297,17 @@ class Reporter:
             pass
 
     def _prune_replays(self):
-        files = [os.path.join(self.replay_dir, name) for name in os.listdir(self.replay_dir)
-                 if name.endswith(".json")]
-        files.sort(key=lambda name: os.stat(name).st_mtime)
-        for name in files[:max(len(files) - self.replay_keep, 0)]:
-            try:
-                os.remove(name)
-            except OSError as error:
-                if error.errno != errno.ENOENT:
-                    raise
+        with self._lock:
+            files = [os.path.join(self.replay_dir, name) for name in os.listdir(self.replay_dir)
+                     if name.endswith(".json") and
+                     os.path.abspath(os.path.join(self.replay_dir, name)) not in self._replays_in_flight]
+            files.sort(key=lambda name: os.stat(name).st_mtime)
+            for name in files[:max(len(files) - self.replay_keep, 0)]:
+                try:
+                    os.remove(name)
+                except OSError as error:
+                    if error.errno != errno.ENOENT:
+                        raise
 
     def handle_browser_report(self, body):
         """Handles a JSON body posted by pocket_kit.js (an error or a feedback
@@ -390,7 +421,7 @@ class Reporter:
                 self.groups.commit(group)
             else:
                 self.groups.rollback(group)
-                self._remove_replay(saved)
+            self._complete_replay(saved, delivered)
 
     def _send(self, report, request_id=None):
         command = self.command()

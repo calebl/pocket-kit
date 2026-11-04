@@ -63,7 +63,7 @@ module PocketKit
                                         request_id: "#{settings.request_id_prefix}-#{request_id}", body: body,
                                         timeout: COMMAND_TIMEOUT, sent_exit_codes: settings.sent_exit_codes)
       ensure
-        Replay.discard(replay) unless delivered
+        Replay.complete(replay, delivered: delivered)
       end
     end
 

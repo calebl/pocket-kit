@@ -93,13 +93,13 @@ module PocketKit
                                                       sent_exit_codes: settings.sent_exit_codes)
           ensure
             delivered ? group_store.commit(group) : group_store.rollback(group)
-            Replay.discard(saved_replay) unless delivered
+            Replay.complete(saved_replay, delivered: delivered)
           end
         end
       ensure
         unless accepted
           group_store.rollback(group)
-          Replay.discard(saved_replay)
+          Replay.complete(saved_replay, delivered: false)
         end
       end
       accepted

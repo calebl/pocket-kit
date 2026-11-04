@@ -1,6 +1,7 @@
 require "fileutils"
 require "json"
 require "securerandom"
+require "set"
 require "pocket_kit/engine"
 require "pocket_kit/replay/configuration"
 require "pocket_kit/replay/helper"
@@ -22,6 +23,8 @@ module PocketKit
     ID_FORMAT = /\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/
     FULL_SNAPSHOT = 2
     MAX_NESTING = 500
+    IN_FLIGHT = Set.new
+    IN_FLIGHT_MUTEX = Mutex.new
 
     # Whether pages record and reports keep a replay.
     def self.enabled?
@@ -51,16 +54,26 @@ module PocketKit
       directory = self.directory
       FileUtils.mkdir_p(directory, mode: 0o700)
       path = directory.join("#{id}.json")
-      File.open(path, File::WRONLY | File::CREAT | File::EXCL, 0o600) { _1.write(JSON.generate(events)) }
+      track(path)
+      File.open(path, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |file|
+        file.write(JSON.generate(events, max_nesting: MAX_NESTING))
+      end
       prune(directory)
       { id: id, path: path.to_s, events: events.size }
-    rescue JSON::ParserError, SystemCallError, IOError
+    rescue JSON::ParserError, JSON::GeneratorError, SystemCallError, IOError
+      untrack(path)
       FileUtils.rm_f(path) if path
       nil
     end
 
-    def self.discard(replay)
-      FileUtils.rm_f(replay[:path]) if replay
+    def self.complete(replay, delivered:)
+      return unless replay
+
+      path = replay[:path]
+      untrack(path)
+      delivered ? prune(Pathname(path).dirname) : FileUtils.rm_f(path)
+    rescue SystemCallError, IOError
+      nil
     end
 
     # Saves the replay posted to one of the engine's endpoints, when replay is
@@ -84,15 +97,34 @@ module PocketKit
     def self.events?(events)
       events.is_a?(Array) &&
         events.all? { _1.is_a?(Hash) && _1["type"].is_a?(Integer) && _1["timestamp"].is_a?(Numeric) } &&
-        events.any? { _1["type"] == FULL_SNAPSHOT }
+        events.any? { _1["type"] == FULL_SNAPSHOT } && finite_numbers?(events)
+    end
+
+    def self.finite_numbers?(value)
+      case value
+      when Numeric then value.finite?
+      when Array then value.all? { finite_numbers?(_1) }
+      when Hash then value.each_value.all? { finite_numbers?(_1) }
+      else true
+      end
+    end
+
+    def self.track(path)
+      IN_FLIGHT_MUTEX.synchronize { IN_FLIGHT.add(path.to_s) }
+    end
+
+    def self.untrack(path)
+      IN_FLIGHT_MUTEX.synchronize { IN_FLIGHT.delete(path.to_s) } if path
     end
 
     def self.prune(directory)
-      files = Dir.glob(directory.join("*.json")).sort_by { File.mtime(_1) }
-      files.first([ files.size - PocketKit.replay.keep, 0 ].max).each { FileUtils.rm_f(_1) }
+      IN_FLIGHT_MUTEX.synchronize do
+        files = Dir.glob(directory.join("*.json")).reject { IN_FLIGHT.include?(_1) }.sort_by { File.mtime(_1) }
+        files.first([ files.size - PocketKit.replay.keep, 0 ].max).each { FileUtils.rm_f(_1) }
+      end
     end
 
-    private_class_method :events?, :prune
+    private_class_method :events?, :finite_numbers?, :track, :untrack, :prune
   end
 
   class Engine

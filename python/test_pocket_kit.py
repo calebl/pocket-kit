@@ -313,6 +313,13 @@ class ReporterTest(unittest.TestCase):
         self.assertEqual(200, kit.handle_browser_report(body.encode()))
         self.assertEqual(4, self.report()["replay"]["events"])
 
+    def test_a_replay_with_a_non_finite_number_is_left_out(self):
+        kit = self.replay_kit()
+        replay = '[{"type":2,"timestamp":Infinity}]'
+
+        self.assertIsNone(kit.store_replay(replay))
+        self.assertEqual([], self.replay_files())
+
     def test_a_bad_or_oversize_replay_is_left_out_and_the_report_still_sent(self):
         kit = self.replay_kit(max_replay_bytes=len(json.dumps(REPLAY)) - 1)
         for replay in [json.dumps(REPLAY), "not json", json.dumps([{"type": 3, "timestamp": 1}]),
@@ -345,6 +352,17 @@ class ReporterTest(unittest.TestCase):
         self.assertIsNone(kit.store_replay(json.dumps(REPLAY)))
         self.assertEqual([], self.replay_files())
 
+    def test_a_serialization_failure_removes_the_unreferenced_replay(self):
+        kit = self.replay_kit()
+        original_dump = pocket_kit.json.dump
+        pocket_kit.json.dump = lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad json"))
+        try:
+            self.assertIsNone(kit.store_replay(json.dumps(REPLAY)))
+        finally:
+            pocket_kit.json.dump = original_dump
+
+        self.assertEqual([], self.replay_files())
+
     def test_non_ascii_replays_do_not_expand_when_saved(self):
         kit = self.replay_kit()
         events = REPLAY + [{"type": 3, "timestamp": 2000, "data": {"text": "é" * 1000}}]
@@ -354,10 +372,23 @@ class ReporterTest(unittest.TestCase):
 
         self.assertLessEqual(os.path.getsize(saved["path"]), len(replay.encode("utf-8")))
 
+    def test_retention_does_not_delete_an_in_flight_replay(self):
+        kit = self.replay_kit(replay_keep=1)
+        first = kit.store_replay(json.dumps(REPLAY))
+        second = kit.store_replay(json.dumps(REPLAY))
+
+        self.assertEqual(sorted([first["path"], second["path"]]), self.replay_files())
+        kit._complete_replay(first, True)
+        self.assertEqual(sorted([first["path"], second["path"]]), self.replay_files())
+        kit._complete_replay(second, True)
+        self.assertEqual([second["path"]], self.replay_files())
+
     def test_only_the_newest_replays_are_kept(self):
         kit = self.replay_kit(replay_keep=2)
         for _ in range(3):
-            self.assertIsNotNone(kit.store_replay(json.dumps(REPLAY)))
+            saved = kit.store_replay(json.dumps(REPLAY))
+            self.assertIsNotNone(saved)
+            kit._complete_replay(saved, True)
             time.sleep(0.01)
         self.assertEqual(2, len(self.replay_files()))
 
