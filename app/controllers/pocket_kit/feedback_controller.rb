@@ -25,7 +25,7 @@ module PocketKit
 
     helper PocketKit::Feedback::Helper
 
-    before_action :expire_replays
+    prepend_before_action :expire_replays
     before_action :require_enabled
     rate_limit to: NOTES_PER_MINUTE, within: 1.minute, only: :create, store: RATE_STORE, with: -> { reject }
 

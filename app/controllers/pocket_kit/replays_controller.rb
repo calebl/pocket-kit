@@ -4,7 +4,7 @@ module PocketKit
   # events. They are available only on this machine, and
   # PocketKit.replay.viewer may restrict them further.
   class ReplaysController < PocketKit.replay.parent_controller.constantize
-    before_action :expire_replays
+    prepend_before_action :expire_replays
     before_action :require_viewer
     layout false
 

@@ -253,6 +253,31 @@ class ReplayTest < ActionDispatch::IntegrationTest
     assert_empty saved_files
   end
 
+  test "a halting parent filter still deletes expired replays" do
+    old = PocketKit::Replay.store(JSON.generate(EVENTS))
+    FileUtils.touch(old[:path], mtime: Time.now - (8 * 24 * 60 * 60))
+
+    get pocket_kit.replay_path(old[:id]), headers: { "X-Halt-Request" => "true" }
+    assert_response :unauthorized
+    assert_empty saved_files
+
+    old = PocketKit::Replay.store(JSON.generate(EVENTS))
+    FileUtils.touch(old[:path], mtime: Time.now - (8 * 24 * 60 * 60))
+
+    post pocket_kit.feedback_path, params: { text: "Look", screen: "pages#home", request_id: REQUEST_ID },
+                                   headers: { "X-Halt-Request" => "true" }, as: :turbo_stream
+    assert_response :unauthorized
+    assert_empty saved_files
+
+    old = PocketKit::Replay.store(JSON.generate(EVENTS))
+    FileUtils.touch(old[:path], mtime: Time.now - (8 * 24 * 60 * 60))
+
+    post pocket_kit.errors_path, params: { kind: "error", message: "boom" },
+                                 headers: { "X-Halt-Request" => "true" }, as: :json
+    assert_response :unauthorized
+    assert_empty saved_files
+  end
+
   test "opening a replay page deletes expired replays" do
     old = PocketKit::Replay.store(JSON.generate(EVENTS))
     fresh = PocketKit::Replay.store(JSON.generate(EVENTS))
