@@ -263,6 +263,24 @@ class ReplayTest < ActionDispatch::IntegrationTest
     assert_equal [ fresh[:path] ], saved_files
   end
 
+  test "rejected replay page requests delete expired replays" do
+    old = PocketKit::Replay.store(JSON.generate(EVENTS))
+    FileUtils.touch(old[:path], mtime: Time.now - (8 * 24 * 60 * 60))
+    PocketKit.replay.viewer = ->(_controller) { false }
+
+    get pocket_kit.replay_path(old[:id], format: :json), env: { "REMOTE_ADDR" => "127.0.0.1" }
+    assert_response :not_found
+    assert_empty saved_files
+
+    old = PocketKit::Replay.store(JSON.generate(EVENTS))
+    FileUtils.touch(old[:path], mtime: Time.now - (8 * 24 * 60 * 60))
+    PocketKit.replay.viewer = ->(_controller) { true }
+
+    get pocket_kit.replay_path(old[:id]), env: { "REMOTE_ADDR" => "100.101.102.103" }
+    assert_response :not_found
+    assert_empty saved_files
+  end
+
   test "an expired replay is not served even before it is deleted" do
     PocketKit.replay.max_age = 3600
     saved = PocketKit::Replay.store(JSON.generate(EVENTS))

@@ -4,11 +4,11 @@ module PocketKit
   # events. They are available only on this machine, and
   # PocketKit.replay.viewer may restrict them further.
   class ReplaysController < PocketKit.replay.parent_controller.constantize
+    before_action :expire_replays
     before_action :require_viewer
     layout false
 
     def show
-      Replay.expire
       events = Replay.read(params[:id])
       return head :not_found unless events
 
@@ -19,6 +19,10 @@ module PocketKit
     end
 
     private
+
+    def expire_replays
+      Replay.expire
+    end
 
     def require_viewer
       head :not_found unless Replay.local_request?(request) && Replay.viewable?(self)
