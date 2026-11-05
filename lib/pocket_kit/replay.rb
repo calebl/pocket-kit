@@ -40,9 +40,10 @@ module PocketKit
                             HTTP_X_CLUSTER_CLIENT_IP HTTP_FORWARDED].freeze
 
     # Whether the request was made on this machine: the connection comes from
-    # a loopback address and no forwarding header names any other client. A
-    # local proxy such as `tailscale serve` connects from 127.0.0.1 but names
-    # the real client in X-Forwarded-For, so that request is refused.
+    # a loopback address, and each forwarding header is either absent or names
+    # only valid loopback clients. A local proxy such as `tailscale serve`
+    # connects from 127.0.0.1 but names the real client in X-Forwarded-For, so
+    # that request is refused. Malformed forwarding metadata is refused too.
     def self.local_request?(request)
       return false unless loopback?(request.get_header("REMOTE_ADDR"))
 
@@ -69,8 +70,7 @@ module PocketKit
       [ PocketKit.replay.max_age.to_f, PRUNE_GRACE_SECONDS ].max
     end
 
-    # Deletes expired replays (and those over the keep target) now, so they
-    # expire even when no new report arrives. Never raises.
+    # Deletes expired replays (and those over the keep target) now. Never raises.
     def self.expire
       directory = self.directory
       prune(directory) if directory.directory?

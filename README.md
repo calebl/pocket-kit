@@ -384,10 +384,11 @@ per app with `config.replay.max_age` (Rails) or `replay_max_age` in seconds
 - **In the app**: open the report's `replay.viewer` path, e.g.
   `/pocket-kit/replays/<uuid>`, on the app's own address. It plays the replay
   with the vendored rrweb player. The replay pages are for this machine only:
-  they answer a request only when it connects from a loopback address and no
+  they answer a request only when it connects from a loopback address and each
   forwarding header (`X-Forwarded-For`, `Forwarded`, `X-Real-IP` and the like)
-  names any other client. A request through `tailscale serve` or another
-  proxy, from the tailnet or anywhere else, gets a 404; open the app's local
+  is absent or validly names only loopback clients. Malformed forwarding
+  metadata, or a request through `tailscale serve` or another proxy from the
+  tailnet or anywhere else, gets a 404; open the app's local
   address (e.g. `http://127.0.0.1:<port>`) on the machine itself.
   `config.replay.viewer` may add a further restriction but cannot allow a
   non-local request.

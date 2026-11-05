@@ -190,8 +190,8 @@ class Reporter:
         self.expire_replays()
 
     def expire_replays(self):
-        """Deletes expired replays (and those over `replay_keep`) now, so they
-        expire even when no new report arrives. Never raises."""
+        """Deletes expired replays (and those over `replay_keep`) now.
+        Never raises."""
         if not self.replay_dir or not os.path.isdir(self.replay_dir):
             return
         try:
