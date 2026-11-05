@@ -8,6 +8,7 @@ module PocketKit
     layout false
 
     def show
+      Replay.expire
       events = Replay.read(params[:id])
       return head :not_found unless events
 

@@ -218,6 +218,74 @@ class ReplayTest < ActionDispatch::IntegrationTest
     assert_equal 2, saved_files.size
   end
 
+  test "replays expire after 7 days by default" do
+    assert_equal 7 * 24 * 60 * 60, PocketKit::Replay::Configuration.new.max_age
+    old = PocketKit::Replay.store(JSON.generate(EVENTS))
+    recent = PocketKit::Replay.store(JSON.generate(EVENTS))
+    FileUtils.touch(old[:path], mtime: Time.now - (7 * 24 * 60 * 60) - 1)
+    FileUtils.touch(recent[:path], mtime: Time.now - (6 * 24 * 60 * 60))
+
+    PocketKit::Replay.expire
+    assert_equal [ recent[:path] ], saved_files
+  end
+
+  test "a custom max_age expires replays sooner, without a new report" do
+    PocketKit.replay.max_age = 3600
+    old = PocketKit::Replay.store(JSON.generate(EVENTS))
+    FileUtils.touch(old[:path], mtime: Time.now - 3601)
+
+    PocketKit::Replay.expire
+    assert_empty saved_files
+  end
+
+  test "opening a replay page deletes expired replays" do
+    old = PocketKit::Replay.store(JSON.generate(EVENTS))
+    fresh = PocketKit::Replay.store(JSON.generate(EVENTS))
+    FileUtils.touch(old[:path], mtime: Time.now - (8 * 24 * 60 * 60))
+
+    get pocket_kit.replay_path(fresh[:id], format: :json)
+    assert_response :success
+    assert_equal [ fresh[:path] ], saved_files
+  end
+
+  test "an expired replay is not served even before it is deleted" do
+    PocketKit.replay.max_age = 3600
+    saved = PocketKit::Replay.store(JSON.generate(EVENTS))
+    FileUtils.touch(saved[:path], mtime: Time.now - 3601)
+    original_expire = PocketKit::Replay.method(:expire)
+    PocketKit::Replay.define_singleton_method(:expire) { nil }
+
+    get pocket_kit.replay_path(saved[:id], format: :json)
+    assert_response :not_found
+    assert_nil PocketKit::Replay.read(saved[:id])
+  ensure
+    PocketKit::Replay.define_singleton_method(:expire, original_expire)
+  end
+
+  test "a max_age shorter than the delivery grace never deletes a replay inside it" do
+    PocketKit.replay.max_age = 1
+    saved = PocketKit::Replay.store(JSON.generate(EVENTS))
+    FileUtils.touch(saved[:path], mtime: Time.now - 60)
+
+    PocketKit::Replay.expire
+    assert_equal [ saved[:path] ], saved_files
+    assert PocketKit::Replay.read(saved[:id])
+  end
+
+  test "the app expires old replays when it starts" do
+    old = PocketKit::Replay.store(JSON.generate(EVENTS))
+    FileUtils.touch(old[:path], mtime: Time.now - (8 * 24 * 60 * 60))
+
+    on_start = []
+    config = Struct.new(:filter_parameters) { define_method(:after_initialize) { |&block| on_start << block } }
+    app = Struct.new(:config).new(config.new([]))
+    PocketKit::Engine.initializers.find { _1.name == "pocket_kit.replay" }.run(app)
+    assert_equal 1, saved_files.size
+
+    on_start.each(&:call)
+    assert_empty saved_files
+  end
+
   test "the replay is kept out of the log" do
     filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
     assert_equal "[FILTERED]", filter.filter("replay" => "[]")["replay"]
@@ -244,6 +312,44 @@ class ReplayTest < ActionDispatch::IntegrationTest
 
     get pocket_kit.replay_path(SecureRandom.uuid)
     assert_response :not_found
+  end
+
+  test "the viewer answers a direct request made on this machine" do
+    saved = PocketKit::Replay.store(JSON.generate(EVENTS))
+
+    get pocket_kit.replay_path(saved[:id], format: :json), env: { "REMOTE_ADDR" => "127.0.0.1" }
+    assert_response :success
+    get pocket_kit.replay_path(saved[:id], format: :json), env: { "REMOTE_ADDR" => "::1" }
+    assert_response :success
+  end
+
+  test "the viewer refuses a request a local proxy forwards from the tailnet" do
+    saved = PocketKit::Replay.store(JSON.generate(EVENTS))
+
+    get pocket_kit.replay_path(saved[:id], format: :json),
+        headers: { "X-Forwarded-For" => "100.101.102.103" }, env: { "REMOTE_ADDR" => "127.0.0.1" }
+    assert_response :not_found
+    get pocket_kit.replay_path(saved[:id], format: :json),
+        headers: { "Forwarded" => 'for="[fd7a:115c:a1e0::1]:443"' }, env: { "REMOTE_ADDR" => "127.0.0.1" }
+    assert_response :not_found
+    get pocket_kit.replay_path(saved[:id], format: :json), env: { "REMOTE_ADDR" => "100.101.102.103" }
+    assert_response :not_found
+  end
+
+  test "the viewer refuses a spoofed or mixed forwarding chain" do
+    saved = PocketKit::Replay.store(JSON.generate(EVENTS))
+    [ { "X-Forwarded-For" => "127.0.0.1, 100.101.102.103" },
+      { "X-Forwarded-For" => "100.101.102.103, 127.0.0.1" },
+      { "X-Forwarded-For" => "127.0.0.1", "X-Real-IP" => "192.168.1.5" },
+      { "Forwarded" => "for=127.0.0.1, for=203.0.113.9" },
+      { "X-Forwarded-For" => "unknown" } ].each do |headers|
+      get pocket_kit.replay_path(saved[:id], format: :json), headers: headers, env: { "REMOTE_ADDR" => "127.0.0.1" }
+      assert_response :not_found, headers.inspect
+    end
+
+    get pocket_kit.replay_path(saved[:id], format: :json),
+        headers: { "X-Forwarded-For" => "127.0.0.1, ::1" }, env: { "REMOTE_ADDR" => "127.0.0.1" }
+    assert_response :success
   end
 
   test "the viewer is not found when its gate says no" do
