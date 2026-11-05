@@ -322,9 +322,13 @@ class Reporter:
                     pass
             files.sort()
             now = time.time()
-            graced = [path for mtime, path in files if mtime <= now - self._replay_prune_grace]
-            too_old = [path for mtime, path in files if mtime <= now - self.replay_max_age]
-            old = [path for path in graced if path not in too_old]
+            too_old = []
+            old = []
+            for mtime, path in files:
+                if mtime <= now - self.replay_max_age:
+                    too_old.append(path)
+                elif mtime <= now - self._replay_prune_grace:
+                    old.append(path)
             excess = max(len(files) - len(too_old) - self.replay_keep, 0)
             for name in too_old + old[:excess]:
                 try:
@@ -336,6 +340,7 @@ class Reporter:
     def handle_browser_report(self, body):
         """Handles a JSON body posted by pocket_kit.js (an error or a feedback
         note). Returns the HTTP status to answer with."""
+        self.expire_replays()
         if not self.enabled():
             return 404
         if not self._take_browser_slot():

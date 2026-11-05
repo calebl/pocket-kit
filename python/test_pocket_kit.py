@@ -310,6 +310,23 @@ class ReporterTest(unittest.TestCase):
         self.assertTrue(kit.report_error(self.raise_error(9)))
         self.assertEqual([], self.replay_files())
 
+    def test_browser_report_early_exits_delete_expired_replays(self):
+        kit = self.replay_kit()
+        old = kit.store_replay(json.dumps(REPLAY))["path"]
+        self.age(old, 8 * 24 * 60 * 60)
+        os.environ.pop(ENV_NAME)
+
+        self.assertEqual(404, kit.handle_browser_report(b'{"kind":"error","message":"boom"}'))
+        self.assertEqual([], self.replay_files())
+
+        os.environ[ENV_NAME] = self.script + " send"
+        old = kit.store_replay(json.dumps(REPLAY))["path"]
+        self.age(old, 8 * 24 * 60 * 60)
+        kit._browser_times = [time.monotonic()] * pocket_kit.BROWSER_REPORTS_PER_MINUTE
+
+        self.assertEqual(429, kit.handle_browser_report(b'{"kind":"error","message":"boom"}'))
+        self.assertEqual([], self.replay_files())
+
     def test_a_max_age_shorter_than_the_delivery_grace_keeps_replays_inside_it(self):
         kit = self.replay_kit(replay_max_age=1)
         saved = kit.store_replay(json.dumps(REPLAY))["path"]

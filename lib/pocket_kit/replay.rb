@@ -50,8 +50,16 @@ module PocketKit
         value = request.get_header(name)
         next true if value.nil?
 
-        clients = name == "HTTP_FORWARDED" ? value.to_s.scan(/for\s*=\s*("[^"]*"|[^;,\s]*)/i).flatten : value.to_s.split(",")
-        clients.all? { loopback?(_1) }
+        if name == "HTTP_FORWARDED"
+          elements = value.to_s.split(",", -1)
+          elements.any? && elements.all? do |element|
+            clients = element.scan(/(?:\A|;)\s*for\s*=\s*("[^"]*"|[^;,\s]+)/i).flatten
+            clients.one? && loopback?(clients.first)
+          end
+        else
+          clients = value.to_s.split(",", -1)
+          clients.any? && clients.all? { loopback?(_1) }
+        end
       end
     end
 

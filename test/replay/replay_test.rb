@@ -358,7 +358,15 @@ class ReplayTest < ActionDispatch::IntegrationTest
       { "X-Forwarded-For" => "100.101.102.103, 127.0.0.1" },
       { "X-Forwarded-For" => "127.0.0.1", "X-Real-IP" => "192.168.1.5" },
       { "Forwarded" => "for=127.0.0.1, for=203.0.113.9" },
-      { "X-Forwarded-For" => "unknown" } ].each do |headers|
+      { "Forwarded" => "proto=https" },
+      { "Forwarded" => "for=127.0.0.1, proto=https" },
+      { "X-Forwarded-For" => "unknown" },
+      { "X-Forwarded-For" => "" },
+      { "X-Real-IP" => "" },
+      { "Client-IP" => "" },
+      { "True-Client-IP" => "" },
+      { "X-Cluster-Client-IP" => "" },
+      { "Forwarded" => "" } ].each do |headers|
       get pocket_kit.replay_path(saved[:id], format: :json), headers: headers, env: { "REMOTE_ADDR" => "127.0.0.1" }
       assert_response :not_found, headers.inspect
     end
