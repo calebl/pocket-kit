@@ -262,6 +262,78 @@ class ReporterTest(unittest.TestCase):
             return []
         return sorted(os.path.join(self.replay_dir, name) for name in os.listdir(self.replay_dir))
 
+    def age(self, path, seconds):
+        when = time.time() - seconds
+        os.utime(path, (when, when))
+
+    def test_replays_expire_after_7_days_by_default(self):
+        kit = self.replay_kit()
+        self.assertEqual(7 * 24 * 60 * 60, kit.replay_max_age)
+        old = kit.store_replay(json.dumps(REPLAY))["path"]
+        recent = kit.store_replay(json.dumps(REPLAY))["path"]
+        self.age(old, 7 * 24 * 60 * 60 + 1)
+        self.age(recent, 6 * 24 * 60 * 60)
+        kit.expire_replays()
+        self.assertEqual([recent], self.replay_files())
+
+    def test_a_custom_max_age_expires_replays_without_a_new_report(self):
+        kit = self.replay_kit(replay_max_age=3600)
+        old = kit.store_replay(json.dumps(REPLAY))["path"]
+        self.age(old, 3601)
+        kit.expire_replays()
+        self.assertEqual([], self.replay_files())
+
+    def test_starting_a_reporter_deletes_expired_replays(self):
+        old = self.replay_kit().store_replay(json.dumps(REPLAY))["path"]
+        self.age(old, 8 * 24 * 60 * 60)
+        self.replay_kit()
+        self.assertEqual([], self.replay_files())
+
+    def test_saving_a_replay_deletes_expired_ones_regardless_of_keep(self):
+        kit = self.replay_kit(replay_keep=100)
+        old = kit.store_replay(json.dumps(REPLAY))["path"]
+        self.age(old, 8 * 24 * 60 * 60)
+        fresh = kit.store_replay(json.dumps(REPLAY))["path"]
+        self.assertEqual([fresh], self.replay_files())
+
+    def test_feedback_and_error_reports_delete_expired_replays_without_new_replay_data(self):
+        kit = self.replay_kit()
+        old = kit.store_replay(json.dumps(REPLAY))["path"]
+        self.age(old, 8 * 24 * 60 * 60)
+
+        self.assertTrue(kit.report_feedback("Cleanup"))
+        self.assertEqual([], self.replay_files())
+
+        old = kit.store_replay(json.dumps(REPLAY))["path"]
+        self.age(old, 8 * 24 * 60 * 60)
+
+        self.assertTrue(kit.report_error(self.raise_error(9)))
+        self.assertEqual([], self.replay_files())
+
+    def test_browser_report_early_exits_delete_expired_replays(self):
+        kit = self.replay_kit()
+        old = kit.store_replay(json.dumps(REPLAY))["path"]
+        self.age(old, 8 * 24 * 60 * 60)
+        os.environ.pop(ENV_NAME)
+
+        self.assertEqual(404, kit.handle_browser_report(b'{"kind":"error","message":"boom"}'))
+        self.assertEqual([], self.replay_files())
+
+        os.environ[ENV_NAME] = self.script + " send"
+        old = kit.store_replay(json.dumps(REPLAY))["path"]
+        self.age(old, 8 * 24 * 60 * 60)
+        kit._browser_times = [time.monotonic()] * pocket_kit.BROWSER_REPORTS_PER_MINUTE
+
+        self.assertEqual(429, kit.handle_browser_report(b'{"kind":"error","message":"boom"}'))
+        self.assertEqual([], self.replay_files())
+
+    def test_a_max_age_shorter_than_the_delivery_grace_keeps_replays_inside_it(self):
+        kit = self.replay_kit(replay_max_age=1)
+        saved = kit.store_replay(json.dumps(REPLAY))["path"]
+        self.age(saved, 60)
+        kit.expire_replays()
+        self.assertEqual([saved], self.replay_files())
+
     def test_a_note_s_replay_is_saved_as_its_own_file_and_named_in_the_report(self):
         kit = self.replay_kit()
         body = json.dumps({"kind": "feedback", "text": "Look", "request_id": REQUEST_ID,

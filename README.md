@@ -304,9 +304,12 @@ PocketKit.configure do |config|
   config.replay.max_bytes = 1_000_000
   config.replay.keep = 100
 
-  # Who may open the replay pages. Called with the controller; the default
-  # allows only requests from this machine.
-  config.replay.viewer = ->(controller) { controller.request.local? }
+  # How long a replay is kept, in seconds or a Duration (default 7 days).
+  config.replay.max_age = 3.days
+
+  # An additional restriction on who may open replay pages. Requests must
+  # always be local; this callback can only narrow access.
+  config.replay.viewer = ->(controller) { controller.current_user&.admin? }
 
   # The replay pages' parent class (default "ApplicationController").
   config.replay.parent_controller = "ApplicationController"
@@ -367,11 +370,28 @@ grouping saves no replay. Retention pruning keeps the newest `keep` files once
 they are older than the delivery grace period, so recent or in-flight reports
 can temporarily leave more files than that target.
 
+Replays expire: a replay older than `max_age` (default 7 days) is never shown.
+It is deleted at the next report, app start, replay save, or replay view after
+that age (replay views apply to Rails). Rails startup cleanup still runs if
+replay recording has since been disabled. Python cleanup requires
+`replay_dir` to remain set. A replay inside the delivery grace period is never
+deleted, so a `max_age` shorter than that grace acts as the grace. Change it
+per app with `config.replay.max_age` (Rails) or `replay_max_age` in seconds
+(Python).
+
 ### Watch one
 
 - **In the app**: open the report's `replay.viewer` path, e.g.
   `/pocket-kit/replays/<uuid>`, on the app's own address. It plays the replay
-  with the vendored rrweb player.
+  with the vendored rrweb player. The replay pages are for this machine only:
+  they answer a request only when it connects from a loopback address and each
+  forwarding header (`X-Forwarded-For`, `Forwarded`, `X-Real-IP` and the like)
+  is absent or validly names only loopback clients. Malformed forwarding
+  metadata, or a request through `tailscale serve` or another proxy from the
+  tailnet or anywhere else, gets a 404; open the app's local
+  address (e.g. `http://127.0.0.1:<port>`) on the machine itself.
+  `config.replay.viewer` may add a further restriction but cannot allow a
+  non-local request.
 - **With no server**: open `viewer/replay.html` from a pocket-kit checkout (or
   the installed gem's directory, `bundle exec gem contents pocket_kit | grep
   viewer`) in a browser and pick the replay file. It loads only the vendored
@@ -497,8 +517,12 @@ status = kit.handle_browser_report(request_body_bytes)
 `Reporter` also takes `sent_exit_codes` (default `(0, 3)`), `group_window`
 (default 600 seconds), and `screens`, the set of screen names a page may
 claim. For session replay, pass `replay_dir` (off without it), and optionally
-`max_replay_bytes` (default 1000000) and `replay_keep` (default 100, reached
-once files are old enough to prune); serve
+`max_replay_bytes` (default 1000000), `replay_keep` (default 100, reached
+once files are old enough to prune) and `replay_max_age` (seconds, default 7
+days; while `replay_dir` is set, expired replays are deleted when the
+`Reporter` is created, on every report and save, and by `expire_replays()`). If
+you turn replay off by omitting `replay_dir`, delete the old replay directory
+yourself or keep `replay_dir` set until it empties. Serve
 `rrweb-record-2.1.7.min.js` from `app/assets/javascripts/pocket_kit/vendor/`
 next to `pocket_kit.js` and add the `pocket-kit-replay` meta tag (see "The
 browser core"). If you change `max_replay_bytes`, put the same value in the

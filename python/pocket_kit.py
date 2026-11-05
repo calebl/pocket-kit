@@ -56,6 +56,7 @@ BROWSER_REPORTS_PER_MINUTE = 30
 MAX_REPLAY_BYTES = 1000000
 REPLAY_KEEP = 100
 REPLAY_PRUNE_GRACE = 600
+REPLAY_MAX_AGE = 7 * 24 * 60 * 60
 FULL_SNAPSHOT = 2
 
 CLASS_FORMAT = re.compile(r"\A[\w$.:]{1,100}\Z")
@@ -160,12 +161,18 @@ class Reporter:
     `replay_dir`, if given, turns on session replay: a replay posted with a
     browser report is saved there (at most `max_replay_bytes` of JSON, with
     `replay_keep` as the retention target after delivery grace) and named in
-    the report. Without it, a posted replay is ignored.
+    the report. Without it, a posted replay is ignored. While `replay_dir` is
+    set, replays older than `replay_max_age` seconds (default 7 days, never less
+    than the delivery grace) are deleted when the reporter is created and on
+    every report or save; call `expire_replays()` to delete them at other times.
+    When turning replay off by omitting `replay_dir`, delete the old directory
+    yourself or keep `replay_dir` set until it empties.
     """
 
     def __init__(self, command_env="ERRORS_COMMAND", app="App", request_id_prefix="errors",
                  sent_exit_codes=(0, 3), group_window=600, screens=None, timeout=COMMAND_TIMEOUT,
-                 replay_dir=None, max_replay_bytes=MAX_REPLAY_BYTES, replay_keep=REPLAY_KEEP):
+                 replay_dir=None, max_replay_bytes=MAX_REPLAY_BYTES, replay_keep=REPLAY_KEEP,
+                 replay_max_age=REPLAY_MAX_AGE):
         self.command_env = command_env
         self.app = app
         self.request_id_prefix = request_id_prefix
@@ -177,8 +184,20 @@ class Reporter:
         self.max_replay_bytes = max_replay_bytes
         self.replay_keep = replay_keep
         self._replay_prune_grace = max(REPLAY_PRUNE_GRACE, 10 * (self.timeout + TERMINATION_GRACE))
+        self.replay_max_age = max(float(replay_max_age), self._replay_prune_grace)
         self._browser_times = []
         self._lock = threading.Lock()
+        self.expire_replays()
+
+    def expire_replays(self):
+        """Deletes expired replays (and those over `replay_keep`) now.
+        Never raises."""
+        if not self.replay_dir or not os.path.isdir(self.replay_dir):
+            return
+        try:
+            self._prune_replays()
+        except OSError:
+            pass
 
     def command(self):
         value = os.environ.get(self.command_env, "")
@@ -202,6 +221,7 @@ class Reporter:
     def report_feedback(self, text, screen=None, context=None, device=None, request_id=None, replay=None):
         """Sends a feedback note. True when the command took it. `replay` is
         the JSON string of rrweb events the page posted, if any."""
+        self.expire_replays()
         text = str(text).strip()
         if not text or len(text) > MAX_NOTE or (request_id is not None and
                                                 not (isinstance(request_id, str) and
@@ -293,12 +313,26 @@ class Reporter:
 
     def _prune_replays(self):
         with self._lock:
-            files = [os.path.join(self.replay_dir, name) for name in os.listdir(self.replay_dir)
-                     if name.endswith(".json")]
-            files.sort(key=lambda name: os.stat(name).st_mtime)
-            cutoff = time.time() - self._replay_prune_grace
-            expired = [name for name in files if os.stat(name).st_mtime <= cutoff]
-            for name in expired[:max(len(files) - self.replay_keep, 0)]:
+            files = []
+            for name in os.listdir(self.replay_dir):
+                if not name.endswith(".json"):
+                    continue
+                path = os.path.join(self.replay_dir, name)
+                try:
+                    files.append((os.stat(path).st_mtime, path))
+                except FileNotFoundError:
+                    pass
+            files.sort()
+            now = time.time()
+            too_old = []
+            old = []
+            for mtime, path in files:
+                if mtime <= now - self.replay_max_age:
+                    too_old.append(path)
+                elif mtime <= now - self._replay_prune_grace:
+                    old.append(path)
+            excess = max(len(files) - len(too_old) - self.replay_keep, 0)
+            for name in too_old + old[:excess]:
                 try:
                     os.remove(name)
                 except OSError as error:
@@ -308,6 +342,7 @@ class Reporter:
     def handle_browser_report(self, body):
         """Handles a JSON body posted by pocket_kit.js (an error or a feedback
         note). Returns the HTTP status to answer with."""
+        self.expire_replays()
         if not self.enabled():
             return 404
         if not self._take_browser_slot():
@@ -378,6 +413,7 @@ class Reporter:
             return True
 
     def _report_error(self, error_class, message, backtrace, source, context, screen, page, replay=None):
+        self.expire_replays()
         if not self.enabled():
             return False
         if source == "browser":

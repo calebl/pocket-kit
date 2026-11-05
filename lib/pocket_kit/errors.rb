@@ -65,6 +65,7 @@ module PocketKit
     # `replay` is called only when the error is sent, not held as a repeat, and
     # returns the saved session replay to name in the report, or nil.
     def self.report(error_class:, message:, backtrace:, source:, screen: nil, page: nil, context: [], replay: nil)
+      Replay.expire
       return false unless enabled?
 
       if source == "browser"

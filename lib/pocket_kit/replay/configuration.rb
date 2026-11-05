@@ -18,8 +18,12 @@ module PocketKit
       # files can temporarily exceed it.
       attr_accessor :keep
 
-      # Called with the controller; return false to answer the replay pages with
-      # a 404. The default allows only requests from this machine.
+      # How long a replay is kept, in seconds (or a Duration such as 3.days).
+      # Older replays are deleted and never served. Default 7 days.
+      attr_accessor :max_age
+
+      # Called with the controller after requiring a local request; return false
+      # to answer the replay pages with a 404. This can only restrict access.
       attr_accessor :viewer
 
       # The class the replay pages inherit from, so the app's own sign-in and
@@ -32,7 +36,8 @@ module PocketKit
         @directory = nil
         @max_bytes = 1_000_000
         @keep = 100
-        @viewer = ->(controller) { controller.request.local? }
+        @max_age = 7 * 24 * 60 * 60
+        @viewer = ->(_controller) { true }
         @parent_controller = "ApplicationController"
       end
     end
