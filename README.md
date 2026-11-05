@@ -372,11 +372,12 @@ can temporarily leave more files than that target.
 
 Replays expire: a replay older than `max_age` (default 7 days) is never shown.
 It is deleted at the next report, app start, replay save, or replay view after
-that age (replay views apply to Rails). Startup cleanup still runs if replay
-recording has since been disabled. A replay inside the delivery grace period
-is never deleted, so a `max_age` shorter than that grace acts as the grace.
-Change it per app with `config.replay.max_age` (Rails) or `replay_max_age` in
-seconds (Python).
+that age (replay views apply to Rails). Rails startup cleanup still runs if
+replay recording has since been disabled. Python cleanup requires
+`replay_dir` to remain set. A replay inside the delivery grace period is never
+deleted, so a `max_age` shorter than that grace acts as the grace. Change it
+per app with `config.replay.max_age` (Rails) or `replay_max_age` in seconds
+(Python).
 
 ### Watch one
 
@@ -517,8 +518,10 @@ status = kit.handle_browser_report(request_body_bytes)
 claim. For session replay, pass `replay_dir` (off without it), and optionally
 `max_replay_bytes` (default 1000000), `replay_keep` (default 100, reached
 once files are old enough to prune) and `replay_max_age` (seconds, default 7
-days; expired replays are deleted when the `Reporter` is created, on every
-report and save, and by `expire_replays()`); serve
+days; while `replay_dir` is set, expired replays are deleted when the
+`Reporter` is created, on every report and save, and by `expire_replays()`). If
+you turn replay off by omitting `replay_dir`, delete the old replay directory
+yourself or keep `replay_dir` set until it empties. Serve
 `rrweb-record-2.1.7.min.js` from `app/assets/javascripts/pocket_kit/vendor/`
 next to `pocket_kit.js` and add the `pocket-kit-replay` meta tag (see "The
 browser core"). If you change `max_replay_bytes`, put the same value in the

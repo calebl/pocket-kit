@@ -161,10 +161,12 @@ class Reporter:
     `replay_dir`, if given, turns on session replay: a replay posted with a
     browser report is saved there (at most `max_replay_bytes` of JSON, with
     `replay_keep` as the retention target after delivery grace) and named in
-    the report. Without it, a posted replay is ignored. Replays older than
-    `replay_max_age` seconds (default 7 days, never less than the delivery
-    grace) are deleted when the reporter is created and on every report or
-    save; call `expire_replays()` to delete them at other times.
+    the report. Without it, a posted replay is ignored. While `replay_dir` is
+    set, replays older than `replay_max_age` seconds (default 7 days, never less
+    than the delivery grace) are deleted when the reporter is created and on
+    every report or save; call `expire_replays()` to delete them at other times.
+    When turning replay off by omitting `replay_dir`, delete the old directory
+    yourself or keep `replay_dir` set until it empties.
     """
 
     def __init__(self, command_env="ERRORS_COMMAND", app="App", request_id_prefix="errors",
