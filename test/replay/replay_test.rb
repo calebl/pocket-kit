@@ -238,6 +238,21 @@ class ReplayTest < ActionDispatch::IntegrationTest
     assert_empty saved_files
   end
 
+  test "feedback and error reports delete expired replays without new replay data" do
+    old = PocketKit::Replay.store(JSON.generate(EVENTS))
+    FileUtils.touch(old[:path], mtime: Time.now - (8 * 24 * 60 * 60))
+
+    send_note(replay: nil)
+    assert_response :success
+    assert_empty saved_files
+
+    old = PocketKit::Replay.store(JSON.generate(EVENTS))
+    FileUtils.touch(old[:path], mtime: Time.now - (8 * 24 * 60 * 60))
+
+    post_error(replay: nil)
+    assert_empty saved_files
+  end
+
   test "opening a replay page deletes expired replays" do
     old = PocketKit::Replay.store(JSON.generate(EVENTS))
     fresh = PocketKit::Replay.store(JSON.generate(EVENTS))
@@ -281,6 +296,7 @@ class ReplayTest < ActionDispatch::IntegrationTest
     app = Struct.new(:config).new(config.new([]))
     PocketKit::Engine.initializers.find { _1.name == "pocket_kit.replay" }.run(app)
     assert_equal 1, saved_files.size
+    PocketKit.replay.enabled = false
 
     on_start.each(&:call)
     assert_empty saved_files
@@ -349,6 +365,16 @@ class ReplayTest < ActionDispatch::IntegrationTest
 
     get pocket_kit.replay_path(saved[:id], format: :json),
         headers: { "X-Forwarded-For" => "127.0.0.1, ::1" }, env: { "REMOTE_ADDR" => "127.0.0.1" }
+    assert_response :success
+  end
+
+  test "the viewer callback cannot allow a non-local request" do
+    saved = PocketKit::Replay.store(JSON.generate(EVENTS))
+    PocketKit.replay.viewer = ->(_controller) { true }
+
+    get pocket_kit.replay_path(saved[:id], format: :json), env: { "REMOTE_ADDR" => "100.101.102.103" }
+    assert_response :not_found
+    get pocket_kit.replay_path(saved[:id], format: :json), env: { "REMOTE_ADDR" => "127.0.0.1" }
     assert_response :success
   end
 

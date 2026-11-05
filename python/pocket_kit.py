@@ -163,8 +163,8 @@ class Reporter:
     `replay_keep` as the retention target after delivery grace) and named in
     the report. Without it, a posted replay is ignored. Replays older than
     `replay_max_age` seconds (default 7 days, never less than the delivery
-    grace) are deleted when the reporter is created and on every save; call
-    `expire_replays()` to delete them at other times.
+    grace) are deleted when the reporter is created and on every report or
+    save; call `expire_replays()` to delete them at other times.
     """
 
     def __init__(self, command_env="ERRORS_COMMAND", app="App", request_id_prefix="errors",
@@ -219,6 +219,7 @@ class Reporter:
     def report_feedback(self, text, screen=None, context=None, device=None, request_id=None, replay=None):
         """Sends a feedback note. True when the command took it. `replay` is
         the JSON string of rrweb events the page posted, if any."""
+        self.expire_replays()
         text = str(text).strip()
         if not text or len(text) > MAX_NOTE or (request_id is not None and
                                                 not (isinstance(request_id, str) and
@@ -405,6 +406,7 @@ class Reporter:
             return True
 
     def _report_error(self, error_class, message, backtrace, source, context, screen, page, replay=None):
+        self.expire_replays()
         if not self.enabled():
             return False
         if source == "browser":

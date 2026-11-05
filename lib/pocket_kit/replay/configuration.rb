@@ -22,10 +22,8 @@ module PocketKit
       # Older replays are deleted and never served. Default 7 days.
       attr_accessor :max_age
 
-      # Called with the controller; return false to answer the replay pages with
-      # a 404. The default allows only requests made on this machine, refusing
-      # any request a proxy (such as `tailscale serve`) forwards from elsewhere.
-      # Widening it shows recorded screens to whoever it lets in.
+      # Called with the controller after requiring a local request; return false
+      # to answer the replay pages with a 404. This can only restrict access.
       attr_accessor :viewer
 
       # The class the replay pages inherit from, so the app's own sign-in and
@@ -39,7 +37,7 @@ module PocketKit
         @max_bytes = 1_000_000
         @keep = 100
         @max_age = 7 * 24 * 60 * 60
-        @viewer = ->(controller) { Replay.local_request?(controller.request) }
+        @viewer = ->(_controller) { true }
         @parent_controller = "ApplicationController"
       end
     end

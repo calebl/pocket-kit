@@ -179,8 +179,8 @@ module PocketKit
       # Replays can hold what was on screen; keep them out of the log.
       app.config.filter_parameters += [ :replay ]
       ActiveSupport.on_load(:action_controller_base) { helper PocketKit::Replay::Helper }
-      # Expire old replays when the app starts, even if no report arrives.
-      app.config.after_initialize { PocketKit::Replay.expire if PocketKit::Replay.enabled? }
+      # Expire old replays when the app starts, even if recording is now off.
+      app.config.after_initialize { PocketKit::Replay.expire }
     end
   end
 end

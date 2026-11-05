@@ -13,6 +13,7 @@ module PocketKit
 
     RATE_STORE = ActiveSupport::Cache::MemoryStore.new
 
+    before_action :expire_replays
     before_action :require_enabled
     rate_limit to: ERRORS_PER_MINUTE, within: 1.minute, only: :create, store: RATE_STORE,
                with: -> { head :too_many_requests }
@@ -27,6 +28,10 @@ module PocketKit
     end
 
     private
+
+    def expire_replays
+      Replay.expire
+    end
 
     def require_enabled
       head :not_found unless PocketKit.errors.browser && Errors.enabled? && PocketKit.errors.enabled.call(self)
