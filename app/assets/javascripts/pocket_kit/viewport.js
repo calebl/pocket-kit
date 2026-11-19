@@ -23,7 +23,7 @@
   if (globalThis.PocketKitViewport) return
 
   const TEXT_INPUT_TYPES = new Set([ "", "text", "search", "email", "url", "tel", "password", "number" ])
-  let started = false
+  let cleanup = null
 
   // The top and height, in CSS pixels, the pinned body should take: the visible
   // area. offsetTop is normally 0; it is only non-zero if Safari panned the
@@ -101,17 +101,27 @@
       touches: event.touches ? event.touches.length : 1,
       inScroller: Boolean(target && target.closest && target.closest("[data-pk-scroll]")),
       selectionCollapsed: !selection || selection.isCollapsed,
-      scrollableField: isTextField(target) && target.scrollHeight > target.clientHeight
+      scrollableField: isTextField(target) && (
+        target.scrollHeight > target.clientHeight || target.scrollWidth > target.clientWidth
+      )
     })) event.preventDefault()
   }
 
-  function start() {
-    if (started) {
+  function sync() {
+    const viewport = window.visualViewport
+    if (!pinned() || !viewport) {
+      if (cleanup) cleanup()
+      cleanup = null
+      const root = document.documentElement.style
+      root.removeProperty("--pk-visible-top")
+      root.removeProperty("--pk-visible-height")
+      return
+    }
+
+    if (cleanup) {
       fit()
       return
     }
-    const viewport = window.visualViewport
-    if (!viewport) return
 
     const active = { passive: false }
     window.addEventListener("resize", fit)
@@ -119,13 +129,19 @@
     viewport.addEventListener("scroll", fit)
     document.addEventListener("touchend", onTouchEnd, active)
     document.addEventListener("touchmove", onTouchMove, active)
-    started = true
+    cleanup = () => {
+      window.removeEventListener("resize", fit)
+      viewport.removeEventListener("resize", fit)
+      viewport.removeEventListener("scroll", fit)
+      document.removeEventListener("touchend", onTouchEnd, active)
+      document.removeEventListener("touchmove", onTouchMove, active)
+    }
     fit()
   }
 
   globalThis.PocketKitViewport = { visibleBox, shouldInterceptTap, shouldBlockTouchMove }
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start)
-  else start()
-  document.addEventListener("turbo:load", start)
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", sync)
+  else sync()
+  document.addEventListener("turbo:load", sync)
 })()

@@ -54,6 +54,39 @@ class ViewportSystemTest < ActionDispatch::SystemTestCase
     assert_in_delta height, composer_bottom, 1
   end
 
+  test "horizontal drags in overflowing text fields are left alone" do
+    visit pinned_path
+    wait_for_script
+    result = evaluate_script(<<~JS)
+      (() => {
+        const field = document.createElement("textarea")
+        field.style.cssText = "width: 40px; white-space: pre; overflow: auto"
+        field.value = "A value much wider than the field"
+        document.getElementById("composer").appendChild(field)
+        const event = new Event("touchmove", { bubbles: true, cancelable: true })
+        field.dispatchEvent(event)
+        return { overflow: field.scrollWidth > field.clientWidth, prevented: event.defaultPrevented }
+      })()
+    JS
+    assert result["overflow"]
+    assert_not result["prevented"]
+  end
+
+  test "Turbo activates the piece only on opted-in pages" do
+    visit pinned_path
+    wait_for_script
+    assert_not_equal "", evaluate_script("document.documentElement.style.getPropertyValue('--pk-visible-height')")
+
+    execute_script("Turbo.visit('/')")
+    assert_text "Home"
+    assert_equal "", evaluate_script("document.documentElement.style.getPropertyValue('--pk-visible-height')")
+    assert_equal "static", evaluate_script("getComputedStyle(document.body).position")
+
+    execute_script("Turbo.visit('/pinned')")
+    assert_selector "#composer"
+    assert_not_equal "", evaluate_script("document.documentElement.style.getPropertyValue('--pk-visible-height')")
+  end
+
   test "a page without the attribute is left alone" do
     visit root_path
     wait_for_script
