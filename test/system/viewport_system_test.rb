@@ -52,9 +52,6 @@ class ViewportSystemTest < ActionDispatch::SystemTestCase
     assert_equal 0, evaluate_script("document.querySelector('header').getBoundingClientRect().top")
     composer_bottom = evaluate_script("document.getElementById('composer').getBoundingClientRect().bottom")
     assert_in_delta height, composer_bottom, 1
-
-    call("V.stop()")
-    assert_equal "", evaluate_script("document.documentElement.style.getPropertyValue('--pk-visible-height')")
   end
 
   test "a page without the attribute is left alone" do

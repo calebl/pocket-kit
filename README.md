@@ -449,8 +449,7 @@ an empty text field focuses it without scrolling, and one-finger drags outside
 `[data-pk-scroll]` are cancelled (pinches, drags over a text field that
 scrolls, and drags while text is selected are left alone). Without
 `visualViewport`, or on a page without `data-pk-viewport`, it does nothing and
-the CSS fills the layout viewport. `PocketKitViewport.stop()` removes its
-listeners and properties; `PocketKitViewport.start()` adds them back.
+the CSS fills the layout viewport.
 
 Use it for screens with a text field near the bottom, such as a chat or a
 quick-add form, where the keyboard is open while the page is in use. A page

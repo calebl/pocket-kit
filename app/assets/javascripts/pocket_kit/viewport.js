@@ -23,7 +23,7 @@
   if (globalThis.PocketKitViewport) return
 
   const TEXT_INPUT_TYPES = new Set([ "", "text", "search", "email", "url", "tel", "password", "number" ])
-  let cleanup = null
+  let started = false
 
   // The top and height, in CSS pixels, the pinned body should take: the visible
   // area. offsetTop is normally 0; it is only non-zero if Safari panned the
@@ -105,15 +105,13 @@
     })) event.preventDefault()
   }
 
-  // Starts following the visible area. Safe to call again (for example after a
-  // Turbo visit replaces <body>); returns stop().
   function start() {
-    if (cleanup) {
+    if (started) {
       fit()
-      return stop
+      return
     }
     const viewport = window.visualViewport
-    if (!viewport) return stop
+    if (!viewport) return
 
     const active = { passive: false }
     window.addEventListener("resize", fit)
@@ -121,28 +119,11 @@
     viewport.addEventListener("scroll", fit)
     document.addEventListener("touchend", onTouchEnd, active)
     document.addEventListener("touchmove", onTouchMove, active)
-    cleanup = () => {
-      window.removeEventListener("resize", fit)
-      viewport.removeEventListener("resize", fit)
-      viewport.removeEventListener("scroll", fit)
-      document.removeEventListener("touchend", onTouchEnd, active)
-      document.removeEventListener("touchmove", onTouchMove, active)
-    }
+    started = true
     fit()
-    return stop
   }
 
-  // Removes every listener and the custom properties, so the CSS falls back.
-  function stop() {
-    if (!cleanup) return
-    cleanup()
-    cleanup = null
-    const root = document.documentElement.style
-    root.removeProperty("--pk-visible-top")
-    root.removeProperty("--pk-visible-height")
-  }
-
-  globalThis.PocketKitViewport = { visibleBox, shouldInterceptTap, shouldBlockTouchMove, start, stop }
+  globalThis.PocketKitViewport = { visibleBox, shouldInterceptTap, shouldBlockTouchMove }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start)
   else start()
