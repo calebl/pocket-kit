@@ -6,9 +6,10 @@
     <%= pocket_kit_errors_tag %>
     <%= pocket_kit_replay_tag %>
     <%= stylesheet_link_tag "pocket_kit/feedback" %>
+    <%= stylesheet_link_tag "pocket_kit/viewport" %>
     <%= javascript_importmap_tags %>
   </head>
-  <body>
+  <body<%= " data-pk-viewport".html_safe if content_for?(:pinned) %>>
     <header><%= content_for?(:feedback) ? yield(:feedback) : pocket_kit_feedback %></header>
     <%= yield %>
   </body>

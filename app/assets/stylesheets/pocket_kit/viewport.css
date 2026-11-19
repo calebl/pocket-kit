@@ -1,0 +1,33 @@
+/* pocket-kit's pinned viewport (with viewport.js). The body fills exactly the
+   visible area, which shrinks while the on-screen keyboard is open: the header
+   stays at the top, a bottom composer sits above the keyboard, and the content
+   between them scrolls in its own element. Without the script it fills the
+   layout viewport. */
+html:has(body[data-pk-viewport]) {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body[data-pk-viewport] {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--pk-visible-top, 0);
+  height: var(--pk-visible-height, 100%);
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+body[data-pk-viewport] > * {
+  flex: none;
+}
+
+body[data-pk-viewport] > [data-pk-scroll] {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}

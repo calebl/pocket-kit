@@ -6,6 +6,9 @@ class PagesController < ApplicationController
     @note_id = params[:id]
   end
 
+  def pinned
+  end
+
   def broken
     raise NoMethodError, "undefined method 'title' for nil (note #{params[:id]})"
   end

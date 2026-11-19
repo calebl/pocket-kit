@@ -1,0 +1,5 @@
+<% content_for :pinned, true %>
+<main data-pk-scroll>
+  <% 60.times do |i| %><p>Message <%= i %></p><% end %>
+</main>
+<form id="composer"><textarea name="text" aria-label="Message"></textarea></form>

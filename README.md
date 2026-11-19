@@ -18,12 +18,13 @@ adapters. Each piece is separate and optional. Today it has:
   in memory, recorded with a vendored copy of [rrweb](https://github.com/rrweb-io/rrweb),
   and sends it along with a feedback note or a page error. The app saves it as
   a file, the report names the file, and a local viewer plays it back.
+- **Pinned viewport** (opt-in): keeps the header, and a bottom composer if the
+  page has one, in the iPhone's visible area, including while the on-screen
+  keyboard is open.
 
 Nothing leaves the machine: the page posts only to the app's own paths, and the
 app hands reports only to the local command. There is no third-party service,
 telemetry, or CDN.
-
-Coming next: pinning the header to the iPhone's visible viewport.
 
 The repo also documents the pattern these apps follow (localhost only, the
 VPN's https address in front, a start script and service, settings outside the
@@ -400,6 +401,62 @@ per app with `config.replay.max_age` (Rails) or `replay_max_age` in seconds
 rrweb is vendored, pinned to 2.1.7 (`@rrweb/record` and `rrweb-player`), with
 its MIT licence, in `app/assets/javascripts/pocket_kit/vendor/`; see the README
 there.
+
+## Pinned viewport
+
+iPhone Safari shrinks the visible area when the on-screen keyboard opens
+without shrinking the page, so a `position: sticky` header can scroll out of
+view and a composer at the bottom can end up under the keyboard. The pinned
+viewport fixes the body to exactly the visible area: the header stays at the
+top, the composer sits just above the keyboard, and the content between them
+scrolls in its own element.
+
+It is two plain files with no dependencies:
+`app/assets/javascripts/pocket_kit/viewport.js` and
+`app/assets/stylesheets/pocket_kit/viewport.css`. In Rails, the script is
+pinned as `pocket_kit/viewport`:
+
+```erb
+<%= stylesheet_link_tag "pocket_kit/viewport" %>
+```
+
+```js
+// app/javascript/application.js
+import "pocket_kit/viewport"
+```
+
+Any other app can copy both files and load them with
+`<link rel="stylesheet" href="/static/viewport.css">` and
+`<script src="/static/viewport.js"></script>`.
+
+Opt in on the body and mark the part that scrolls; every other direct child
+of the body (the header, the composer) keeps its own height:
+
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+<body data-pk-viewport>
+  <header>...</header>
+  <main data-pk-scroll>...</main>
+  <form class="composer">...</form>
+</body>
+```
+
+The script keeps `--pk-visible-top` and `--pk-visible-height` on `<html>` in
+step with `window.visualViewport` (on resize and scroll, and again after each
+Turbo visit). It also stops iOS from panning the whole page: the first tap into
+an empty text field focuses it without scrolling, and one-finger drags outside
+`[data-pk-scroll]` are cancelled (pinches, drags over a text field that
+scrolls, and drags while text is selected are left alone). Without
+`visualViewport`, or on a page without `data-pk-viewport`, it does nothing and
+the CSS fills the layout viewport. `PocketKitViewport.stop()` removes its
+listeners and properties; `PocketKitViewport.start()` adds them back.
+
+Use it for screens with a text field near the bottom, such as a chat or a
+quick-add form, where the keyboard is open while the page is in use. A page
+that only scrolls a document, with no text field that brings up the keyboard,
+is fine with the plain `position: sticky` header in
+[docs/local-app-pattern.md](docs/local-app-pattern.md).
 
 ## The report format
 
