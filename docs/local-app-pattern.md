@@ -100,10 +100,16 @@ and in the layout:
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 ```
 
-iPhone Safari shrinks the visible area when the keyboard opens without changing
-the layout viewport, so a sticky header can slide out of view. pocket-kit's
-next piece will pin the header to the visible viewport; until then, test the
-header with the keyboard open (step 9).
+That is enough for a page that mostly scrolls a document. iPhone Safari,
+though, shrinks the visible area when the keyboard opens without changing the
+layout viewport, so on a screen used with the keyboard open (a chat, a
+quick-add form with its field at the bottom) a sticky header can slide out of
+view and a bottom composer can end up under the keyboard. For those screens use
+pocket-kit's pinned viewport instead (see the README): put `data-pk-viewport`
+on the body and `data-pk-scroll` on the part that scrolls, and load
+`viewport.js` and `viewport.css`. The body is then fixed to exactly the visible
+area, so the header and the composer stay in sight. Either way, test the header
+with the keyboard open (step 9).
 
 ## 6. A feedback button
 
