@@ -8,6 +8,17 @@ class ViewportSystemTest < ActionDispatch::SystemTestCase
     Timeout.timeout(5) { sleep 0.05 until evaluate_script("typeof window.PocketKitViewport === 'object'") }
   end
 
+  # Turbo renders a page before it fires turbo:load, which is when the script
+  # pins or releases it, so wait for that instead of reading straight away.
+  def wait_for_pinned(pinned)
+    Timeout.timeout(5) do
+      sleep 0.05 until evaluate_script(<<~JS) == [ pinned, pinned ]
+        [ document.documentElement.style.getPropertyValue("--pk-visible-height") !== "",
+          getComputedStyle(document.body).position === "fixed" ]
+      JS
+    end
+  end
+
   def call(js)
     wait_for_script
     evaluate_script("(() => { const V = window.PocketKitViewport; return #{js} })()")
@@ -79,11 +90,13 @@ class ViewportSystemTest < ActionDispatch::SystemTestCase
 
     execute_script("Turbo.visit('/')")
     assert_text "Home"
+    wait_for_pinned(false)
     assert_equal "", evaluate_script("document.documentElement.style.getPropertyValue('--pk-visible-height')")
     assert_equal "static", evaluate_script("getComputedStyle(document.body).position")
 
     execute_script("Turbo.visit('/pinned')")
     assert_selector "#composer"
+    wait_for_pinned(true)
     assert_not_equal "", evaluate_script("document.documentElement.style.getPropertyValue('--pk-visible-height')")
   end
 
