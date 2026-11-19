@@ -3,10 +3,10 @@
 Small shared pieces for self-hosted phone web apps: apps that run on your own
 machine and that you reach from your phone over a VPN such as Tailscale.
 
-pocket-kit is a framework-free core with adapters on top. The core is one plain
-JavaScript file for the page and one JSON report handed to a local command you
-choose. The Rails engine (this Ruby gem) and a small Python helper are the
-adapters. Each piece is separate and optional. Today it has:
+pocket-kit has a framework-free reporting core with adapters on top. That core
+is one plain JavaScript file for the page and one JSON report handed to a local
+command you choose. The Rails engine (this Ruby gem) and a small Python helper
+are the adapters. Each piece is separate and optional. Today it has:
 
 - **Feedback button**: a small button that opens a dialog; the note typed into
   it goes to a local command you choose, along with the screen it was sent from
@@ -45,9 +45,9 @@ mount PocketKit::Engine, at: "/pocket-kit"
 ```
 
 pocket-kit needs Rails 8, turbo-rails, importmap-rails, and stimulus-rails.
-The JavaScript is the browser core, `pocket_kit.js`, pinned as `pocket_kit`,
-and a Stimulus controller over it, served through importmap-rails and
-Propshaft. If the host app has not initialized Importmap and Stimulus, run:
+The reporting JavaScript is the browser core, `pocket_kit.js`, pinned as
+`pocket_kit`, with a Stimulus controller over it, served through importmap-rails
+and Propshaft. If the host app has not initialized Importmap and Stimulus, run:
 
 ```sh
 bin/rails importmap:install
