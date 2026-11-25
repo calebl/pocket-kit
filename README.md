@@ -36,7 +36,7 @@ repo, a home-screen icon, and a deploy checklist): see
 
 ```ruby
 # Gemfile
-gem "pocket_kit", github: "calebl/pocket-kit", tag: "v0.4.0"
+gem "pocket_kit", github: "calebl/pocket-kit", tag: "v0.5.0"
 ```
 
 ```ruby
